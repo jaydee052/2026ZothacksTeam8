@@ -3,7 +3,7 @@ from flask import Flask
 from flask_cors import CORS
 
 from db import init_db
-from routes import buckets, categories, office_hours, queue, syllabus
+from routes import buckets, categories, office_hours, queue, queue_ticket, syllabus
 
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*"}})
@@ -15,6 +15,7 @@ app.config["UPLOAD_DIR"] = UPLOAD_DIR
 init_db()
 
 app.register_blueprint(queue.bp)
+app.register_blueprint(queue_ticket.bp)
 app.register_blueprint(office_hours.bp)
 app.register_blueprint(syllabus.bp)
 app.register_blueprint(buckets.bp)

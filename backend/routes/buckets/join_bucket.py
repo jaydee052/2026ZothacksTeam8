@@ -7,8 +7,9 @@ Body (JSON):
 """
 from flask import jsonify, request
 
-from db import get_connection, row_to_dict
+from db import get_connection
 from priority import score
+from queue_order import get_ticket
 from validation import clean, question_error
 
 from . import bp
@@ -58,6 +59,7 @@ def join_bucket(bucket_id):
         ),
     )
     conn.commit()
-    ticket = conn.execute("SELECT * FROM tickets WHERE id = ?", (cursor.lastrowid,)).fetchone()
+    # Includes the student's position in line, for the "you are #N" display.
+    ticket = get_ticket(conn, cursor.lastrowid)
     conn.close()
-    return jsonify(row_to_dict(ticket)), 201
+    return jsonify(ticket), 201

@@ -1,8 +1,9 @@
 # Route blueprints for the office hours queue API.
 from flask import Blueprint, jsonify, request
 
-from db import create_bucket, get_connection, row_to_dict
+from db import create_bucket, get_connection
 from priority import score
+from queue_order import get_ticket, session_line
 from sessions import has_started, pick_session
 from validation import category_error, clean, question_error
 
@@ -11,43 +12,49 @@ bp = Blueprint("queue", __name__, url_prefix="/api/queue")
 # How far one professor "bump" moves a ticket.
 BUMP_AMOUNT = 15
 
-# Each waiting ticket plus how many waiting students share its bucket.
-TICKETS_WITH_COUNT = """
-    SELECT t.*,
-        (SELECT COUNT(*) FROM tickets m
-         WHERE m.bucket_id = t.bucket_id AND m.status = 'waiting') AS student_count
-    FROM tickets t
-"""
-
-
-def _with_priority(row):
-    """Professor-changed tickets keep their set priority; others use the formula."""
-    ticket = row_to_dict(row)
-    ticket["manually_changed"] = bool(ticket["manually_changed"])
-    ticket["late"] = bool(ticket["late"])
-    if not ticket["manually_changed"]:
-        ticket["priority"] = score(
-            ticket["question_type"],
-            ticket["student_count"],
-            ticket["overflow_count"],
-            ticket["late"],
-        )
-    return ticket
-
-
-def _get_ticket(conn, ticket_id):
-    row = conn.execute(TICKETS_WITH_COUNT + " WHERE t.id = ?", (ticket_id,)).fetchone()
-    return _with_priority(row) if row else None
-
-
 @bp.get("")
 def list_queue():
+    """Waiting students in serving order, each with a position number.
+
+    ?office_hours_id=N  only that session's line
+    No filter: every session's line, grouped by session start time.
+    Positions count from 1 within each session.
+    """
     conn = get_connection()
-    rows = conn.execute(TICKETS_WITH_COUNT + " WHERE t.status = 'waiting'").fetchall()
+    raw_id = request.args.get("office_hours_id")
+
+    if raw_id is not None:
+        try:
+            office_hours_id = int(raw_id)
+        except ValueError:
+            conn.close()
+            return jsonify({"error": "office_hours_id must be a number"}), 400
+        session = conn.execute(
+            "SELECT id FROM office_hours WHERE id = ?", (office_hours_id,)
+        ).fetchone()
+        if session is None:
+            conn.close()
+            return jsonify({"error": "office hours not found"}), 404
+        line = session_line(conn, office_hours_id)
+        conn.close()
+        return jsonify(line)
+
+    # Sessions that have someone waiting, earliest first. Tickets with no
+    # session (from very old databases) come last.
+    session_ids = [
+        row["office_hours_id"]
+        for row in conn.execute(
+            """
+            SELECT DISTINCT t.office_hours_id
+            FROM tickets t LEFT JOIN office_hours o ON o.id = t.office_hours_id
+            WHERE t.status = 'waiting'
+            ORDER BY o.starts_at IS NULL, o.starts_at
+            """
+        )
+    ]
+    line = [ticket for sid in session_ids for ticket in session_line(conn, sid)]
     conn.close()
-    tickets = [_with_priority(row) for row in rows]
-    tickets.sort(key=lambda t: (-t["priority"], t["created_at"]))
-    return jsonify(tickets)
+    return jsonify(line)
 
 
 @bp.post("")
@@ -86,7 +93,7 @@ def join_queue():
          session["id"], bucket_id, int(late)),
     )
     conn.commit()
-    ticket = _get_ticket(conn, cursor.lastrowid)
+    ticket = get_ticket(conn, cursor.lastrowid)
     conn.close()
     return jsonify(ticket), 201
 
@@ -122,7 +129,7 @@ def update_ticket(ticket_id):
     conn = get_connection()
     conn.execute(f"UPDATE tickets SET {assignments} WHERE id = ?", values)
     conn.commit()
-    ticket = _get_ticket(conn, ticket_id)
+    ticket = get_ticket(conn, ticket_id)
     conn.close()
 
     if ticket is None:
@@ -137,7 +144,7 @@ def bump_ticket(ticket_id):
     delta = BUMP_AMOUNT if direction == "up" else -BUMP_AMOUNT
 
     conn = get_connection()
-    ticket = _get_ticket(conn, ticket_id)
+    ticket = get_ticket(conn, ticket_id)
     if ticket is None:
         conn.close()
         return jsonify({"error": "ticket not found"}), 404
@@ -148,6 +155,6 @@ def bump_ticket(ticket_id):
         (ticket["priority"] + delta, ticket_id),
     )
     conn.commit()
-    updated = _get_ticket(conn, ticket_id)
+    updated = get_ticket(conn, ticket_id)
     conn.close()
     return jsonify(updated)
