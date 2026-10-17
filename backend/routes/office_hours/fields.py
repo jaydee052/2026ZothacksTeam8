@@ -40,19 +40,18 @@ def read_fields(data, current=None):
     return fields, None
 
 
-def session_to_dict(row):
-    """A session as JSON, with is_open as true/false and a state the frontend can show.
+def session_to_dict(session):
+    """A session (models.OfficeHours) as JSON, with a state the frontend can show.
 
     state: "upcoming" (taking questions, not started), "running", or "closed".
     """
-    if row is None:
+    if session is None:
         return None
-    session = dict(row)
-    session["is_open"] = bool(session["is_open"])
+    data = session.to_dict()
     if is_closed(session):
-        session["state"] = "closed"
+        data["state"] = "closed"
     elif has_started(session):
-        session["state"] = "running"
+        data["state"] = "running"
     else:
-        session["state"] = "upcoming"
-    return session
+        data["state"] = "upcoming"
+    return data

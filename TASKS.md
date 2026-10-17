@@ -41,6 +41,7 @@ Feature details are in [spec.md](spec.md).
   source venv/bin/activate
   pip install -r requirements.txt
   ```
+- After pulling backend changes, run `pip install -r requirements.txt` again (with the venv active) in case new packages were added.
 - Backend, every time: `cd backend && source venv/bin/activate && python app.py` (runs on http://localhost:5001; check http://localhost:5001/api/health)
 - The backend has no web page of its own. A blank or "Not Found" page at http://localhost:5001 is normal.
 - Frontend: `cd frontend && npm install && npm run dev` (usually http://localhost:5173)
@@ -158,6 +159,7 @@ Times use the format `2026-10-17T14:00`.
 
 ### Done
 - [x] Flask app, CORS, SQLite setup (`app.py`, `db.py`)
+- [x] Database code uses SQLAlchemy; tables are defined in `models.py`
 - [x] Tables: `office_hours`, `tickets`, `buckets`, `syllabi`
 - [x] Older databases get new columns added automatically on startup
 - [x] Spec categories and priority formula (`priority.py`)

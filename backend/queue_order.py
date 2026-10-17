@@ -2,31 +2,33 @@
 
 Shared by the queue and bucket endpoints so they always agree on positions.
 """
-from db import row_to_dict
+from sqlalchemy import func, select
+from sqlalchemy.orm import aliased
+
+from models import Ticket
 from priority import score
 
-# Each ticket plus how many waiting students share its bucket.
-TICKETS_WITH_COUNT = """
-    SELECT t.*,
-        (SELECT COUNT(*) FROM tickets m
-         WHERE m.bucket_id = t.bucket_id AND m.status = 'waiting') AS student_count
-    FROM tickets t
-"""
+# How many waiting students share each ticket's bucket (counted per ticket).
+_members = aliased(Ticket)
+STUDENT_COUNT = (
+    select(func.count(_members.id))
+    .where(_members.bucket_id == Ticket.bucket_id, _members.status == "waiting")
+    .correlate(Ticket)
+    .scalar_subquery()
+    .label("student_count")
+)
 
 
-def with_priority(row):
-    """Professor-changed tickets keep their set priority; others use the formula."""
-    ticket = row_to_dict(row)
-    ticket["manually_changed"] = bool(ticket["manually_changed"])
-    ticket["late"] = bool(ticket["late"])
-    if not ticket["manually_changed"]:
-        ticket["priority"] = score(
-            ticket["question_type"],
-            ticket["student_count"],
-            ticket["overflow_count"],
-            ticket["late"],
+def with_priority(ticket, student_count):
+    """Ticket as a dict. Professor-changed tickets keep their set priority;
+    others use the formula."""
+    data = ticket.to_dict()
+    data["student_count"] = student_count
+    if not ticket.manually_changed:
+        data["priority"] = score(
+            ticket.question_type, student_count, ticket.overflow_count, ticket.late
         )
-    return ticket
+    return data
 
 
 def serving_order(ticket):
@@ -35,27 +37,31 @@ def serving_order(ticket):
     return (-ticket["priority"], ticket["created_at"], ticket["id"])
 
 
-def session_line(conn, office_hours_id):
+def session_line(db, office_hours_id):
     """Waiting tickets in one session, in serving order, numbered from 1."""
-    rows = conn.execute(
-        TICKETS_WITH_COUNT + " WHERE t.status = 'waiting' AND t.office_hours_id IS ?",
-        (office_hours_id,),
-    ).fetchall()
-    line = sorted((with_priority(row) for row in rows), key=serving_order)
+    if office_hours_id is None:
+        in_session = Ticket.office_hours_id.is_(None)
+    else:
+        in_session = Ticket.office_hours_id == office_hours_id
+    rows = db.execute(
+        select(Ticket, STUDENT_COUNT).where(Ticket.status == "waiting", in_session)
+    ).all()
+    line = sorted((with_priority(ticket, count) for ticket, count in rows), key=serving_order)
     for number, ticket in enumerate(line, start=1):
         ticket["position"] = number
     return line
 
 
-def get_ticket(conn, ticket_id):
+def get_ticket(db, ticket_id):
     """One ticket, with its position in its session's line (None if not waiting)."""
-    row = conn.execute(TICKETS_WITH_COUNT + " WHERE t.id = ?", (ticket_id,)).fetchone()
+    row = db.execute(select(Ticket, STUDENT_COUNT).where(Ticket.id == ticket_id)).first()
     if row is None:
         return None
-    if row["status"] != "waiting":
-        ticket = with_priority(row)
-        ticket["position"] = None
-        return ticket
-    for ticket in session_line(conn, row["office_hours_id"]):
-        if ticket["id"] == ticket_id:
-            return ticket
+    ticket, count = row
+    if ticket.status != "waiting":
+        data = with_priority(ticket, count)
+        data["position"] = None
+        return data
+    for data in session_line(db, ticket.office_hours_id):
+        if data["id"] == ticket_id:
+            return data

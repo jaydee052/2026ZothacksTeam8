@@ -7,7 +7,8 @@ Body (JSON):
 """
 from flask import jsonify, request
 
-from db import get_connection
+from db import get_db
+from models import Bucket, Ticket
 from priority import score
 from queue_order import get_ticket
 from validation import clean, question_error
@@ -29,37 +30,27 @@ def join_bucket(bucket_id):
         if error:
             return jsonify({"error": error}), 400
 
-    conn = get_connection()
-    bucket = conn.execute("SELECT * FROM buckets WHERE id = ?", (bucket_id,)).fetchone()
-    if bucket is None:
-        conn.close()
-        return jsonify({"error": "bucket not found"}), 404
-    if bucket["status"] != "waiting":
-        conn.close()
-        return jsonify({"error": "bucket is no longer open"}), 409
+    with get_db() as db:
+        bucket = db.get(Bucket, bucket_id)
+        if bucket is None:
+            return jsonify({"error": "bucket not found"}), 404
+        if bucket.status != "waiting":
+            return jsonify({"error": "bucket is no longer open"}), 409
 
-    # The student takes on the bucket's category and its place in line. Joining a
-    # bucket from before the session started keeps the student with that group.
-    cursor = conn.execute(
-        """
-        INSERT INTO tickets
-            (student_name, class_section, question, question_type, priority,
-             office_hours_id, bucket_id, late)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            name,
-            section,
-            question or bucket["title"],
-            bucket["question_type"],
-            score(bucket["question_type"], late=bucket["late"]),
-            bucket["office_hours_id"],
-            bucket_id,
-            bucket["late"],
-        ),
-    )
-    conn.commit()
-    # Includes the student's position in line, for the "you are #N" display.
-    ticket = get_ticket(conn, cursor.lastrowid)
-    conn.close()
-    return jsonify(ticket), 201
+        # The student takes on the bucket's category and its place in line. Joining a
+        # bucket from before the session started keeps the student with that group.
+        ticket = Ticket(
+            student_name=name,
+            class_section=section,
+            question=question or bucket.title,
+            question_type=bucket.question_type,
+            priority=score(bucket.question_type, late=bucket.late),
+            office_hours_id=bucket.office_hours_id,
+            bucket_id=bucket.id,
+            late=bucket.late,
+        )
+        db.add(ticket)
+        db.commit()
+
+        # Includes the student's position in line, for the "you are #N" display.
+        return jsonify(get_ticket(db, ticket.id)), 201
