@@ -78,10 +78,12 @@ The backend now has three statuses: `waiting` (in line), `done` (helped) and `le
 
 - [ ] Remove the up/down arrow buttons
 - [ ] Let the professor drag a group to a new spot in the line
-- [ ] On drop, pin the group there with `POST /api/queue/<id>/pin` and `{"position": N}`:
-  - The backend counts positions by **student**, so a group of 3 takes 3 spots. To drop a group at a spot, pin each of its students to back-to-back positions, starting at the number of students in the groups above it + 1.
-  - The latest pin wins, so anyone already pinned there moves down one.
-- [ ] Show a "pinned" badge on pinned groups (`pinned_position` is set), with an **Unpin** option → `{"position": null}`
+- [ ] On drop, pin the group there in one call: `POST /api/buckets/<bucket_id>/pin` with `{"group_position": N}`, where N is the spot it was dropped on, counted in groups the way the screen shows them (1 = top). The backend works out the student positions and keeps the group together.
+  - The group then stays at that spot whatever the score formula says. New questions, even high-scoring ones, go around it.
+  - The latest pin wins: a group already pinned there moves down one.
+  - When anyone ahead of it is helped or leaves, it moves up with the line.
+  - Students who join a pinned group are pinned with it.
+- [ ] Show a "pinned" badge on pinned groups (their students have `pinned_position` set), with an **Unpin** option → `{"group_position": null}`
 - [ ] Late-section groups can be dragged up into the main line. Dragging within the late section isn't needed, since it's first come, first served.
 - [ ] Works with a mouse and on a touchscreen; keep a keyboard way to move a group (e.g. focus it and press up/down) so it stays accessible without arrows on screen
 - [ ] Clean up `api.bump` in `api.js` if nothing uses it anymore

@@ -11,13 +11,15 @@ puts them last.
 
 The latest pin wins: pinning someone to a spot that's already pinned moves the
 student who was there down one (and so on, if that spot is pinned too).
+To pin a whole group (e.g. for drag and drop), use POST /api/buckets/<id>/pin.
 """
 from flask import Blueprint, jsonify, request
-from sqlalchemy import select
 
 from db import get_db
 from models import Ticket
+from pins import pin_at
 from queue_order import get_ticket
+from validation import spot_error
 
 bp = Blueprint("queue_pin", __name__, url_prefix="/api/queue")
 
@@ -28,10 +30,9 @@ def pin_ticket(ticket_id):
     if "position" not in data:
         return jsonify({"error": "position is required (a number from 1, or null to unpin)"}), 400
     position = data["position"]
-    if position is not None and (
-        isinstance(position, bool) or not isinstance(position, int) or position < 1
-    ):
-        return jsonify({"error": "position must be a number from 1, or null to unpin"}), 400
+    error = spot_error(position)
+    if error:
+        return jsonify({"error": error}), 400
 
     with get_db() as db:
         shown = get_ticket(db, ticket_id)
@@ -41,37 +42,9 @@ def pin_ticket(ticket_id):
             return jsonify({"error": "only students who are waiting can be pinned"}), 409
 
         ticket = db.get(Ticket, ticket_id)
-        if position is not None:
-            _make_room(db, ticket, position)
-            # Keep the score they have right now, so it doesn't jump when the
-            # formula stops applying to them.
-            ticket.priority = shown["priority"]
-            ticket.manually_changed = True
-        ticket.pinned_position = position
+        if position is None:
+            ticket.pinned_position = None
+        else:
+            pin_at(db, ticket, position, shown["priority"])
         db.commit()
         return jsonify(get_ticket(db, ticket_id))
-
-
-
-def _make_room(db, ticket, position):
-    """If another waiting student in the same session is pinned to this spot,
-    move them down one. Do the same for anyone pinned right after them, so
-    back-to-back pins all shift together."""
-    pins = {
-        other.pinned_position: other
-        for other in db.scalars(
-            select(Ticket).where(
-                Ticket.office_hours_id == ticket.office_hours_id,
-                Ticket.status == "waiting",
-                Ticket.pinned_position.is_not(None),
-                Ticket.id != ticket.id,
-            )
-        )
-    }
-    spot = position
-    in_the_way = []
-    while spot in pins:
-        in_the_way.append(pins[spot])
-        spot += 1
-    for other in in_the_way:
-        other.pinned_position += 1

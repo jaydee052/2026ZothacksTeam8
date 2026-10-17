@@ -120,9 +120,10 @@ feature details are in [spec.md](spec.md).
             |        moving a late question up puts it in the main line,
             |        moving it down does nothing since it's already last)
             |
-            +--> PIN someone to a spot, e.g. "#2"
-            |       (they stay there while everyone else moves around them;
-            |        pinning a spot that's taken moves that person down one)
+            +--> DRAG a group to a spot, e.g. "#2" (this pins it)
+            |       (it stays there whatever the score says; new questions go
+            |        around it; when someone ahead is helped, it moves up too;
+            |        dropping on a pinned spot moves that group down one)
             |
             v
    4. CLOSE the session (or it closes by itself 30 minutes after its end time)
@@ -186,8 +187,8 @@ of anyone in the late section.
 
 Higher score = helped sooner. Ties go to whoever asked first.
 
-After that, anyone the professor **pinned** is placed at their pinned spot, and
-everyone else fills in around them.
+After that, anyone the professor **pinned** (by dragging) is placed at their
+pinned spot, and everyone else fills in around them.
 
 When a session closes, everyone still waiting moves to the next session. They
 count as on time there (they were waiting before it started), and their score
@@ -214,6 +215,7 @@ The time and difficulty numbers for each category are placeholder guesses the te
 
 ```
 backend/
+  tests/                  similar-question test pairs and a script to measure matching
   app.py                  starts the server and plugs in all the pieces
   models.py               what's stored: sessions, groups, tickets
   db.py                   opens the database, adds sample data
@@ -222,6 +224,7 @@ backend/
   overflow.py             moving waiting students on: closing, auto-closing, stranded students
   sessions.py             upcoming / running / closed, and which session a question joins
   similarity.py           decides if two questions are "the same question"
+  pins.py                 pinning: placing, making room, moving pins up as people leave
   bucket_rules.py         closes a group when nobody in it is waiting
   validation.py           checks input (25-word limit, valid times, etc.)
 
@@ -231,7 +234,7 @@ backend/
     queue_leave.py        leave the line
     queue_pin.py          professor pins a student to a spot
     categories.py         the list of question types
-    buckets/              groups: list, join, suggest similar, mark answered
+    buckets/              groups: list, join, suggest similar, mark answered, pin (drag)
     office_hours/         sessions: list, schedule, edit, open, close, delete
     syllabus.py           (empty, not built yet)
 

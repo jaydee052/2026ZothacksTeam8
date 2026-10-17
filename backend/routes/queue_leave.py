@@ -8,6 +8,7 @@ from flask import Blueprint, jsonify
 from bucket_rules import sync_bucket_status
 from db import get_db
 from models import Ticket
+from pins import leaving_line
 from queue_order import get_ticket
 
 bp = Blueprint("queue_leave", __name__, url_prefix="/api/queue")
@@ -22,8 +23,8 @@ def leave_queue(ticket_id):
         if ticket.status != "waiting":
             return jsonify({"error": f"this student isn't waiting (status: {ticket.status})"}), 409
 
+        leaving_line(db, [ticket])  # pins behind them move up; theirs is cleared
         ticket.status = "left"
-        ticket.pinned_position = None
         db.flush()
         sync_bucket_status(db, ticket.bucket_id)
         db.commit()

@@ -3,6 +3,7 @@ from flask import Blueprint, jsonify, request
 from sqlalchemy import func, select
 
 from bucket_rules import sync_bucket_status
+from pins import leaving_line
 from db import create_bucket, get_db
 from models import Bucket, OfficeHours, Ticket
 from priority import score
@@ -127,10 +128,10 @@ def update_ticket(ticket_id):
         category_changed = (
             "question_type" in updates and updates["question_type"] != ticket.question_type
         )
+        if "status" in updates and updates["status"] != ticket.status:
+            leaving_line(db, [ticket])  # pins behind them move up; theirs is cleared
         for key, value in updates.items():
             setattr(ticket, key, value)
-        if "status" in updates:
-            ticket.pinned_position = None  # a pin only means something while waiting
         db.flush()
 
         # A new category means a different kind of question than the rest of the

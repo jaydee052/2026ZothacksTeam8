@@ -77,6 +77,7 @@ Base URL: `http://localhost:5001`. Every endpoint returns JSON. When something g
 | POST | `/api/queue/<id>/bump` | `{direction: "up" or "down"}` | Updated ticket (moves 15 points, marks it `manually_changed`). 409 when bumping a late-section question down. |
 | GET | `/api/buckets` | `?question_type=` `?status=` | Buckets in line order, with `member_count`, `priority`, `in_late_section` and `members` (each student's `ticket_id`, `student_name`, `class_section`, `question`, `status`) |
 | GET | `/api/buckets/suggest` | `?question=` (required) `?question_type=` `?office_hours_id=` | Up to 5 open buckets with a similar question, each with `similarity` (0.5–1), most similar first. Empty list if nothing matches. |
+| POST | `/api/buckets/<id>/pin` | `{group_position: 2}` or `{group_position: null}` to unpin | `{bucket_id, group_position, members}`. Puts the whole group at that spot, counted in groups (for drag and drop). The group stays together; the latest pin wins. |
 | POST | `/api/buckets/<id>/resolve` | — | `{bucket, resolved_count}`. Marks the bucket and everyone waiting in it done. 409 if already done. |
 | POST | `/api/buckets/<id>/join` | `{student_name, class_section, question?}` | New ticket (201). The student takes the bucket's place in line, even if they join late. |
 | GET | `/api/office_hours` | `?course=` `?is_open=true/false` `?state=upcoming/running/closed` | Sessions with `waiting_count` and `state` (`upcoming` / `running` / `closed`) |
@@ -100,7 +101,7 @@ Base URL: `http://localhost:5001`. Every endpoint returns JSON. When something g
 - When a session closes, waiting students move to the next session, are no longer late, and have their score doubled. Pins are cleared.
 - Sessions close on their own 30 minutes after their end time.
 - If there's no next session when one closes, its waiting students stay put and move into the next session as soon as one is scheduled.
-- Pinned students (`pinned_position`) are placed at their spot after everything else is sorted.
+- Pinned students (`pinned_position`) are placed at their spot after everything else is sorted, overriding the score formula. When someone ahead of them is helped or leaves, they move up with the line. Students who join a pinned group are pinned with it.
 
 Times use the format `2026-10-17T14:00`.
 
@@ -117,7 +118,7 @@ Start with the first item; the classes and color items build on it.
 - [ ] 3. Profile button showing the student's name, section and classes
 - [ ] 4. "Same question?" Join button on every question in the line, not just the one suggested while typing
 - [ ] 5. "Leave the line" button (status `left`) next to "Fixed it, thanks" (status `done`)
-- [ ] 6. Professor: drag and drop to reorder the line, replacing the up/down arrows (uses pinning)
+- [ ] 6. Professor: drag and drop to reorder the line, replacing the up/down arrows (backend ready: `POST /api/buckets/<id>/pin`)
 - [ ] 7. Professor: show names as "Jordan + 5 others", with the full list on hover
 - [ ] 8. Color code each class on the class pages and the professor page
 
@@ -188,7 +189,7 @@ The backend's late rule changed after these screens were written. Late questions
 - [x] "What's coming up": bar chart of waiting questions by category
 - [ ] Show each student's own wording of the question inside a group (`members` from `GET /api/buckets`)
 - [ ] Edit a ticket's category or priority
-- [ ] Pin a group to a spot and show a "pinned" badge, as part of drag and drop (Next up #6; backend ready: `POST /api/queue/<id>/pin`)
+- [ ] Pin a group to a spot and show a "pinned" badge, as part of drag and drop (Next up #6; backend ready: `POST /api/buckets/<id>/pin`)
 - [ ] "Leave the line" button for students (Next up #5; backend ready: `POST /api/queue/<id>/leave`)
 
 ### Professor: office hours
@@ -249,7 +250,9 @@ The backend's late rule changed after these screens were written. Late questions
 - [x] Close a bucket automatically when its last ticket is done, and reopen it if a ticket goes back to waiting (`bucket_rules.py`)
 - [x] `GET /api/buckets/suggest?question=...&question_type=...`: similar-question matching (`routes/buckets/suggest_buckets.py`, `similarity.py`)
 - [x] Return the member list in each bucket for the professor view
-- [ ] Tune similar-question matching with real student questions (cutoff and filler words are in `similarity.py`)
+- [x] Tune similar-question matching: 145 labeled question pairs in `tests/similarity_cases.py`; run `python tests/check_similarity.py` to measure. Now 143/145 with no wrong matches (was 78/105 with 19 wrong on the first 105).
+- [ ] Add real student questions to `tests/similarity_cases.py` once the app is used, and re-check
+- [x] Pin a whole group in one call for drag and drop: `POST /api/buckets/<id>/pin` (`routes/buckets/pin_bucket.py`, `pins.py`). Pinned groups stay together, and pins move up as people ahead are helped.
 
 ### Office hours
 - [x] Students stranded on a closed session move into the next session once one is scheduled (`overflow.py`)

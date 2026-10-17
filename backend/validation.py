@@ -44,3 +44,12 @@ def parse_time(value):
         return datetime.fromisoformat(clean(value)).isoformat(timespec="minutes")
     except (TypeError, ValueError):
         return None
+
+
+def spot_error(value, name="position"):
+    """A spot in line must be a whole number from 1, or null (to unpin)."""
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        return f"{name} must be a number from 1, or null to unpin"
+    return None
