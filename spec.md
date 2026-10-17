@@ -65,7 +65,7 @@ Priority Score = (Base Time) + (Complex × 3) + (Student × 5) + Priority
 | Base Time | Estimated time for the question |
 | Complex | Difficulty: 1 = quick, 3 = understanding, 5 = conceptual |
 | Student | Number of students with the same question |
-| Priority | Overflow term: 0 for first time, +2 for each overflow |
+| Overflow | Overflow term: 1 for first time, x2 for each overflow |
 
 **Open question:** does the highest or lowest score get served first? As written, the highest score would rank long, complex questions ahead of quick ones.
 
