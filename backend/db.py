@@ -120,7 +120,7 @@ def create_bucket(db, title, question_type, office_hours_id, late=False):
     bucket = Bucket(
         title=title,
         question_type=question_type,
-        priority=score(question_type, late=late),
+        priority=score(question_type),
         office_hours_id=office_hours_id,
         late=late,
     )

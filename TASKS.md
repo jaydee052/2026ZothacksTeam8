@@ -31,7 +31,7 @@ Feature details are in [spec.md](spec.md).
 - [ ] What the class section field holds, such as "Lec A" or an Anteater API section code like "35500".
 - [ ] Whether TA queues are in scope for the hackathon or a stretch goal.
 - [ ] When a session is already running, should a student who doesn't pick a session join it as late, or be offered the next session to be on time? (Currently they join the running one as late. The frontend can offer the choice by sending `office_hours_id`.)
-- [ ] Should a professor bump be able to lift a late question above on-time ones? (Currently yes: one bump up gives a late question 15, which is ahead of a Quick Q&A at 10.)
+- [x] Professor bumps on late questions: bumping up moves the question into the main line at its score + 15; bumping down is refused, since it's already at the back.
 
 ### Running the project
 - Backend, first time:
@@ -67,8 +67,8 @@ Base URL: `http://localhost:5001`. Every endpoint returns JSON. When something g
 | GET | `/api/queue/<id>` | — | One ticket with its current `position` (404 if not found) |
 | POST | `/api/queue` | `{student_name, class_section, question, question_type, office_hours_id?}` | New ticket (201). Without `office_hours_id`, it goes to the running session, or the next upcoming one. 409 if none. |
 | PATCH | `/api/queue/<id>` | any of `{status, priority, question_type, question, class_section}` | Updated ticket. Setting `priority` marks it `manually_changed`. |
-| POST | `/api/queue/<id>/bump` | `{direction: "up" or "down"}` | Updated ticket (moves 15 points, marks it `manually_changed`) |
-| GET | `/api/buckets` | `?question_type=` `?status=` | Buckets with `member_count`, `priority` and `members` (each student's `ticket_id`, `student_name`, `class_section`, `question`, `status`) |
+| POST | `/api/queue/<id>/bump` | `{direction: "up" or "down"}` | Updated ticket (moves 15 points, marks it `manually_changed`). 409 when bumping a late-section question down. |
+| GET | `/api/buckets` | `?question_type=` `?status=` | Buckets in line order, with `member_count`, `priority`, `in_late_section` and `members` (each student's `ticket_id`, `student_name`, `class_section`, `question`, `status`) |
 | GET | `/api/buckets/suggest` | `?question=` (required) `?question_type=` `?office_hours_id=` | Up to 5 open buckets with a similar question, each with `similarity` (0.5–1), most similar first. Empty list if nothing matches. |
 | POST | `/api/buckets/<id>/resolve` | — | `{bucket, resolved_count}`. Marks the bucket and everyone waiting in it done. 409 if already done. |
 | POST | `/api/buckets/<id>/join` | `{student_name, class_section, question?}` | New ticket (201). The student takes the bucket's place in line, even if they join late. |
@@ -78,7 +78,7 @@ Base URL: `http://localhost:5001`. Every endpoint returns JSON. When something g
 | POST | `/api/office_hours/<id>/open` | — | Opened session. Starts it early if its start time hasn't come yet. 409 if already open or closed. |
 | POST | `/api/office_hours/<id>/close` | — | `{session, moved_to, moved_count, warning?}`. Waiting students move to the next session of the same course. 409 if already closed. |
 
-**Ticket fields:** `id`, `student_name`, `class_section`, `question`, `question_type`, `priority`, `status` (`waiting` / `done`), `bucket_id`, `student_count`, `overflow_count`, `manually_changed`, `late`, `office_hours_id`, `created_at`, `position`
+**Ticket fields:** `id`, `student_name`, `class_section`, `question`, `question_type`, `priority`, `status` (`waiting` / `done`), `bucket_id`, `student_count`, `overflow_count`, `manually_changed`, `late`, `in_late_section`, `office_hours_id`, `created_at`, `position`
 
 `position` is the ticket's place in its own session's line, starting at 1, or `null` once it's no longer waiting. Joining the queue or a bucket returns it right away, so the student can see "you are #N".
 
@@ -86,8 +86,9 @@ Base URL: `http://localhost:5001`. Every endpoint returns JSON. When something g
 
 **How the line works:**
 - A session has started once the professor presses Open or its start time passes, whichever comes first.
-- Questions submitted before the start are on time and ranked by the formula: `(Base Time + Complex × 3 + Students × 5) × Overflow × OnTime`.
-- Questions submitted after the start have `late: true` and a priority of 0, so they go to the back in the order they arrived.
+- The line has two sections. The main line holds on-time questions, ranked by `(Base Time + Complex × 3 + Students × 5) × Overflow`.
+- Questions submitted after the start have `late: true` and `in_late_section: true`. They go to the back, in the order they arrived. Their `priority` is still their real score, but it doesn't change their order.
+- Bumping a late question up moves it into the main line (`in_late_section` becomes false). Bumping it down returns 409.
 - When a session closes, waiting students move to the next session, are no longer late, and have their score doubled.
 
 Times use the format `2026-10-17T14:00`.
@@ -132,7 +133,8 @@ Times use the format `2026-10-17T14:00`.
 
 ### Professor: queue management
 - [ ] Queue list with priority, category, student count, and badges for "late", "pushed from last session" (`overflow_count` > 0) and "manually changed"
-- [ ] Show a divider between on-time and late questions
+- [ ] Show a divider between the main line and the late section (`in_late_section`)
+- [ ] Hide or disable the "down" button for questions in the late section
 - [ ] Group tickets in the same bucket together
 - [ ] "Done" button → `PATCH /api/queue/<id>` with `{status: "done"}`
 - [ ] Up/down bump buttons → `POST /api/queue/<id>/bump`
@@ -174,7 +176,7 @@ Times use the format `2026-10-17T14:00`.
 - [x] Buckets: every new question starts a bucket; list and join (`routes/buckets/`)
 - [x] Office hours: list, create, edit, open, close (`routes/office_hours/`)
 - [x] Closing a session pushes waiting students to the next one and doubles their score
-- [x] Questions can be submitted before a session starts; questions submitted after the start go to the back (`sessions.py`, OnTime term)
+- [x] Questions can be submitted before a session starts; questions submitted after the start go to the late section at the back, by arrival (`sessions.py`, `queue_order.py`)
 - [x] Session states (`upcoming` / `running` / `closed`) and `closed_at`; closed sessions can't be reopened or joined
 - [x] Joining a bucket from before the start keeps the late student with that bucket
 - [x] Sample session is set relative to the current time, so a fresh database always has one to join

@@ -112,7 +112,9 @@ feature details are in [spec.md](spec.md).
             +--> "Answered" for a whole group (everyone in it at once)
             |
             +--> Move someone up or down by hand
-            |       (the app won't re-rank them after that)
+            |       (the app won't re-rank them after that;
+            |        moving a late question up puts it in the main line,
+            |        moving it down does nothing since it's already last)
             |
             v
    4. CLOSE the session
@@ -140,29 +142,53 @@ feature details are in [spec.md](spec.md).
 
 ---
 
-## 6. How the line is ordered (the score)
+## 6. How the line is ordered
+
+The line has two sections:
 
 ```
-   score = ( Time  +  Difficulty x 3  +  Students x 5 )  x  Moved  x  OnTime
-             ----     --------------     ------------       -----     ------
-             how      1 quick            how many           1, then   1 = on time
-             long it  3 understanding    people share       x2 each   0 = late
-             takes    5 conceptual       the question       time it   (goes to
-                                                            was moved  the back)
+   +-------------------------------------------+   +--------------------------+
+   |  MAIN LINE                                |   |  LATE SECTION (the back) |
+   |  asked before the session started         |   |  asked after it started  |
+   |  (or moved up by the professor)           |   |                          |
+   |                                           |   |                          |
+   |  highest score first                      |-->|  first come, first served|
+   +-------------------------------------------+   +--------------------------+
+```
+
+Being on time is a yes/no that picks your section. It isn't part of the score,
+so a late question still shows its real score; it just doesn't move you ahead
+of anyone in the late section.
+
+**The score** (used to order the main line):
+
+```
+   score = ( Time  +  Difficulty x 3  +  Students x 5 )  x  Moved
+             ----     --------------     ------------       -----
+             how      1 quick            how many           1, then x2 each
+             long it  3 understanding    people share       time the question
+             takes    5 conceptual       the question       was moved to a
+                                                            later session
 ```
 
 Higher score = helped sooner. Ties go to whoever asked first.
 
+When a session closes, everyone still waiting moves to the next session. They
+count as on time there (they were waiting before it started), and their score
+doubles.
+
 **Example:**
 
-| Who | Question type | Group size | Moved? | On time? | Score |
-|---|---|---|---|---|---|
-| Kim | Research | 3 students | no | yes | (15 + 15 + 15) x 1 x 1 = **45** |
-| Alex | Understanding Topic | 1 | no | yes | (10 + 9 + 5) x 1 x 1 = **24** |
-| Jordan | Quick Q&A | 1 | yes, once | yes | (2 + 3 + 5) x 2 x 1 = **20** |
-| Cal | Research | 1 | no | **no** | (15 + 15 + 5) x 1 x 0 = **0** |
+| Who | Question type | Group size | Moved? | On time? | Score | Section |
+|---|---|---|---|---|---|---|
+| Kim | Research | 3 students | no | yes | (15 + 15 + 15) x 1 = **45** | main |
+| Alex | Understanding Topic | 1 | no | yes | (10 + 9 + 5) x 1 = **24** | main |
+| Jordan | Quick Q&A | 1 | yes, once | yes | (2 + 3 + 5) x 2 = **20** | main |
+| Dee | Quick Q&A | 1 | no | **no**, asked at 2:05 | (2 + 3 + 5) x 1 = **10** | late |
+| Cal | Research | 1 | no | **no**, asked at 2:10 | (15 + 15 + 5) x 1 = **35** | late |
 
-Line: Kim (#1), Alex (#2), Jordan (#3), Cal (#4).
+Line: Kim (#1), Alex (#2), Jordan (#3), then the late section in arrival order:
+Dee (#4), Cal (#5). Cal's higher score doesn't put him ahead of Dee.
 
 The time and difficulty numbers for each category are placeholder guesses the team still needs to decide (see TASKS.md).
 

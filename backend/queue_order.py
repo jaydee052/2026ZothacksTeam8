@@ -1,5 +1,11 @@
 """The order students are served in, and each student's place in line.
 
+The line has two sections:
+  1. Main line: on-time questions (and late ones the professor moved up),
+     highest score first.
+  2. Late section, at the back: questions submitted after the session started,
+     in the order they arrived. Their score doesn't change their order.
+
 Shared by the queue and bucket endpoints so they always agree on positions.
 """
 from sqlalchemy import func, select
@@ -24,17 +30,24 @@ def with_priority(ticket, student_count):
     others use the formula."""
     data = ticket.to_dict()
     data["student_count"] = student_count
+    data["in_late_section"] = in_late_section(ticket)
     if not ticket.manually_changed:
-        data["priority"] = score(
-            ticket.question_type, student_count, ticket.overflow_count, ticket.late
-        )
+        data["priority"] = score(ticket.question_type, student_count, ticket.overflow_count)
     return data
 
 
+def in_late_section(item):
+    """Late, and not moved up by the professor. Works for tickets and buckets."""
+    return bool(item.late) and not getattr(item, "manually_changed", False)
+
+
 def serving_order(ticket):
-    """Highest score first. Ties go to whoever submitted first; the id breaks
-    ties between questions submitted in the same second."""
-    return (-ticket["priority"], ticket["created_at"], ticket["id"])
+    """Main line first, highest score first; then the late section by arrival.
+    Ties go to whoever submitted first; the id breaks ties between questions
+    submitted in the same second."""
+    if ticket["in_late_section"]:
+        return (1, 0, ticket["created_at"], ticket["id"])
+    return (0, -ticket["priority"], ticket["created_at"], ticket["id"])
 
 
 def session_line(db, office_hours_id):

@@ -44,7 +44,7 @@ def join_bucket(bucket_id):
             class_section=section,
             question=question or bucket.title,
             question_type=bucket.question_type,
-            priority=score(bucket.question_type, late=bucket.late),
+            priority=score(bucket.question_type),
             office_hours_id=bucket.office_hours_id,
             bucket_id=bucket.id,
             late=bucket.late,

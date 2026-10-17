@@ -78,7 +78,7 @@ def join_queue():
             class_section=section,
             question=question,
             question_type=question_type,
-            priority=score(question_type, late=late),
+            priority=score(question_type),
             office_hours_id=session.id,
             bucket_id=bucket.id,
             late=late,
@@ -139,7 +139,15 @@ def bump_ticket(ticket_id):
         if shown is None:
             return jsonify({"error": "ticket not found"}), 404
 
+        # Late questions are already at the back. Bumping one up moves it into the
+        # main line; bumping it down has nowhere to go.
+        if shown["in_late_section"] and delta < 0:
+            return jsonify({
+                "error": "this question is already in the late section at the back of the line"
+            }), 409
+
         # Start from the priority currently shown, then mark it as manually changed.
+        # A manually changed question is ranked in the main line, even if it was late.
         ticket = db.get(Ticket, ticket_id)
         ticket.priority = shown["priority"] + delta
         ticket.manually_changed = True

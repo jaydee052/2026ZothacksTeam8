@@ -51,9 +51,7 @@ def suggest_buckets():
             continue
         data = bucket.to_dict()
         data["member_count"] = member_count
-        data["priority"] = score(
-            bucket.question_type, member_count, bucket.overflow_count, bucket.late
-        )
+        data["priority"] = score(bucket.question_type, member_count, bucket.overflow_count)
         data["similarity"] = match
         suggestions.append(data)
 
