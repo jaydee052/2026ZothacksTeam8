@@ -2,6 +2,7 @@
 from flask import Blueprint, jsonify, request
 from sqlalchemy import select
 
+from bucket_rules import sync_bucket_status
 from db import create_bucket, get_db
 from models import OfficeHours, Ticket
 from priority import score
@@ -118,6 +119,11 @@ def update_ticket(ticket_id):
             return jsonify({"error": "ticket not found"}), 404
         for key, value in updates.items():
             setattr(ticket, key, value)
+        db.flush()
+        # Close the student's bucket if they were the last one waiting in it
+        # (or reopen it if they were put back to waiting).
+        if "status" in updates:
+            sync_bucket_status(db, ticket.bucket_id)
         db.commit()
         return jsonify(get_ticket(db, ticket_id))
 

@@ -68,7 +68,9 @@ Base URL: `http://localhost:5001`. Every endpoint returns JSON. When something g
 | POST | `/api/queue` | `{student_name, class_section, question, question_type, office_hours_id?}` | New ticket (201). Without `office_hours_id`, it goes to the running session, or the next upcoming one. 409 if none. |
 | PATCH | `/api/queue/<id>` | any of `{status, priority, question_type, question, class_section}` | Updated ticket. Setting `priority` marks it `manually_changed`. |
 | POST | `/api/queue/<id>/bump` | `{direction: "up" or "down"}` | Updated ticket (moves 15 points, marks it `manually_changed`) |
-| GET | `/api/buckets` | `?question_type=` `?status=` | Buckets with `member_count` and `priority` |
+| GET | `/api/buckets` | `?question_type=` `?status=` | Buckets with `member_count`, `priority` and `members` (each student's `ticket_id`, `student_name`, `class_section`, `question`, `status`) |
+| GET | `/api/buckets/suggest` | `?question=` (required) `?question_type=` `?office_hours_id=` | Up to 5 open buckets with a similar question, each with `similarity` (0.5–1), most similar first. Empty list if nothing matches. |
+| POST | `/api/buckets/<id>/resolve` | — | `{bucket, resolved_count}`. Marks the bucket and everyone waiting in it done. 409 if already done. |
 | POST | `/api/buckets/<id>/join` | `{student_name, class_section, question?}` | New ticket (201). The student takes the bucket's place in line, even if they join late. |
 | GET | `/api/office_hours` | `?course=` `?is_open=true/false` | Sessions with `waiting_count` and `state` (`upcoming` / `running` / `closed`) |
 | POST | `/api/office_hours` | `{course, location, starts_at, ends_at}` | New session (201). Takes questions right away; `state` is `upcoming` until it starts. |
@@ -113,6 +115,7 @@ Times use the format `2026-10-17T14:00`.
 - [ ] If the API says there's no upcoming session, show "No office hours scheduled yet"
 
 ### Student: similar questions (buckets)
+- [ ] As the student types, show similar open questions from `GET /api/buckets/suggest?question=...&question_type=...` (wait until they pause typing before calling it)
 - [ ] After a category is picked, show open buckets in it from `GET /api/buckets?question_type=...`
 - [ ] Show each bucket's question and how many students are in it
 - [ ] "Same question" button → `POST /api/buckets/<id>/join`
@@ -134,7 +137,8 @@ Times use the format `2026-10-17T14:00`.
 - [ ] "Done" button → `PATCH /api/queue/<id>` with `{status: "done"}`
 - [ ] Up/down bump buttons → `POST /api/queue/<id>/bump`
 - [ ] Edit a ticket's category or priority
-- [ ] Mark a whole bucket done (needs the backend "resolve bucket" task)
+- [ ] Show each bucket's members (names and their wording of the question)
+- [ ] "Answered" button for a whole bucket → `POST /api/buckets/<id>/resolve`
 - [ ] Drag to pin a ticket to a spot (needs the backend pinning task)
 
 ### Professor: office hours
@@ -185,10 +189,11 @@ Times use the format `2026-10-17T14:00`.
 - [ ] Decide whether `question_type` changes on a ticket in a bucket should move it out of the bucket
 
 ### Buckets
-- [ ] `POST /api/buckets/<id>/resolve`: mark the bucket and all its tickets done
-- [ ] Close a bucket automatically when its last ticket is done
-- [ ] `GET /api/buckets/suggest?question=...&question_type=...`: similar-question matching (start with Python's `difflib`)
-- [ ] Return the member list in each bucket for the professor view
+- [x] `POST /api/buckets/<id>/resolve`: mark the bucket and all its tickets done (`routes/buckets/resolve_bucket.py`)
+- [x] Close a bucket automatically when its last ticket is done, and reopen it if a ticket goes back to waiting (`bucket_rules.py`)
+- [x] `GET /api/buckets/suggest?question=...&question_type=...`: similar-question matching (`routes/buckets/suggest_buckets.py`, `similarity.py`)
+- [x] Return the member list in each bucket for the professor view
+- [ ] Tune similar-question matching with real student questions (cutoff and filler words are in `similarity.py`)
 
 ### Office hours
 - [ ] Move students stranded on a closed session once a later session is scheduled

@@ -3,6 +3,9 @@
 Query params (all optional):
   question_type  only show buckets in this category, e.g. "grading"
   status         defaults to "waiting"
+
+Each bucket includes "members": the students in it, in the order they joined,
+with their own wording of the question and whether they're still waiting.
 """
 from flask import jsonify, request
 from sqlalchemy import and_, func, select
@@ -31,6 +34,22 @@ def list_buckets():
     with get_db() as db:
         rows = db.execute(query).all()
 
+        # Everyone in these buckets, grouped by bucket, in the order they joined.
+        bucket_ids = [bucket.id for bucket, _ in rows]
+        members = {bucket_id: [] for bucket_id in bucket_ids}
+        if bucket_ids:
+            tickets = db.scalars(
+                select(Ticket).where(Ticket.bucket_id.in_(bucket_ids)).order_by(Ticket.id)
+            ).all()
+            for ticket in tickets:
+                members[ticket.bucket_id].append({
+                    "ticket_id": ticket.id,
+                    "student_name": ticket.student_name,
+                    "class_section": ticket.class_section,
+                    "question": ticket.question,
+                    "status": ticket.status,
+                })
+
         buckets = []
         for bucket, member_count in rows:
             data = bucket.to_dict()
@@ -39,6 +58,7 @@ def list_buckets():
             data["priority"] = score(
                 bucket.question_type, member_count, bucket.overflow_count, bucket.late
             )
+            data["members"] = members[bucket.id]
             buckets.append(data)
 
     buckets.sort(key=lambda b: (-b["priority"], b["created_at"]))
