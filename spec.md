@@ -79,3 +79,17 @@ If a question doesn't fit in office hours:
 ## OH Data
 
 - Professor uploads syllabi for the quarter
+
+## Data for Classes
+
+- Anteater API
+
+## Manual Changing
+
+- Boolean flag on each queue entry: `True` if manually changed, `False` if not
+- A pinned entry gets priority at the index it was pinned to
+
+## Other Features
+
+- TA queues
+- Changing times
