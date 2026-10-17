@@ -1,13 +1,13 @@
 """GET /api/buckets — list buckets, highest priority first.
 
 Query params (all optional):
-  question_type  only show buckets in this category, e.g. "debugging"
+  question_type  only show buckets in this category, e.g. "grading"
   status         defaults to "waiting"
 """
 from flask import jsonify, request
 
 from db import get_connection, row_to_dict
-from priority import bucket_priority
+from priority import score
 
 from . import bp
 
@@ -36,8 +36,10 @@ def list_buckets():
     buckets = []
     for row in rows:
         bucket = row_to_dict(row)
-        bucket["base_priority"] = bucket["priority"]
-        bucket["priority"] = bucket_priority(bucket["priority"], bucket["member_count"])
+        # Students x 5 in the formula: more students sharing a question ranks it higher.
+        bucket["priority"] = score(
+            bucket["question_type"], bucket["member_count"], bucket["overflow_count"]
+        )
         buckets.append(bucket)
 
     buckets.sort(key=lambda b: (-b["priority"], b["created_at"]))

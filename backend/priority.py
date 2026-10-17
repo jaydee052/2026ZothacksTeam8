@@ -1,22 +1,39 @@
-from db import QUESTION_TYPES
+"""Queue priority logic. See "Priority Formula" in spec.md.
+
+    Priority Score = Base Time + (Complex x 3) + (Students x 5) + Overflow
+
+Higher scores are served first. (The spec lists this as an open question.)
+"""
+
+# Question categories from the spec.
+#   base_time:  estimated minutes the question takes (placeholder estimates)
+#   complexity: 1 = quick, 3 = understanding, 5 = conceptual
+CATEGORIES = {
+    "quick_qa": {"label": "Quick Q&A", "base_time": 2, "complexity": 1},
+    "understanding_topic": {"label": "Understanding Topic", "base_time": 10, "complexity": 3},
+    "grading": {"label": "Grading", "base_time": 5, "complexity": 1},
+    "scheduling": {"label": "Scheduling / Logistics", "base_time": 3, "complexity": 1},
+    "research": {"label": "Research", "base_time": 15, "complexity": 5},
+    "personal": {"label": "Personal", "base_time": 10, "complexity": 3},
+}
+
+# Used for old tickets whose category is no longer in the list.
+FALLBACK_CATEGORY = "quick_qa"
+
+COMPLEXITY_WEIGHT = 3
+STUDENT_WEIGHT = 5
 
 
-def score_question(question_type, question_text=""):
-    """
-    Must-have: ranking by question type.
-    Nice-to-have hook: bump similar/keyword-heavy exam questions later.
-    """
-    base = QUESTION_TYPES.get(question_type, QUESTION_TYPES["other"])
-    text = (question_text or "").lower()
-    if "exam" in text or "midterm" in text or "final" in text:
-        base += 10
-    return base
+def overflow_term(overflow_count):
+    """1 the first time a question is queued, doubled for each overflow."""
+    return 2 ** max(overflow_count, 0)
 
 
-# Each extra student in a bucket moves it up the queue by this much.
-BUCKET_SIZE_BONUS = 5
-
-
-def bucket_priority(base_priority, member_count):
-    """Category score plus a bonus for every student beyond the first."""
-    return base_priority + BUCKET_SIZE_BONUS * max(member_count - 1, 0)
+def score(category, student_count=1, overflow_count=0):
+    info = CATEGORIES.get(category, CATEGORIES[FALLBACK_CATEGORY])
+    return (
+        info["base_time"]
+        + info["complexity"] * COMPLEXITY_WEIGHT
+        + max(student_count, 1) * STUDENT_WEIGHT
+        + overflow_term(overflow_count)
+    )

@@ -1,15 +1,9 @@
 import sqlite3
 from pathlib import Path
 
-DB_PATH = Path(__file__).parent / "office_hours.db"
+from priority import score
 
-QUESTION_TYPES = {
-    "exam": 100,
-    "debugging": 80,
-    "homework": 60,
-    "conceptual": 40,
-    "other": 20,
-}
+DB_PATH = Path(__file__).parent / "office_hours.db"
 
 
 def get_connection():
@@ -40,12 +34,14 @@ def init_db():
             status TEXT NOT NULL DEFAULT 'waiting',
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             office_hours_id INTEGER,
+            overflow_count INTEGER NOT NULL DEFAULT 0,
             FOREIGN KEY (office_hours_id) REFERENCES office_hours(id)
         );
 
         CREATE TABLE IF NOT EXISTS tickets (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             student_name TEXT NOT NULL,
+            class_section TEXT,
             question TEXT NOT NULL,
             question_type TEXT NOT NULL,
             priority INTEGER NOT NULL,
@@ -53,6 +49,8 @@ def init_db():
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             office_hours_id INTEGER,
             bucket_id INTEGER,
+            overflow_count INTEGER NOT NULL DEFAULT 0,
+            manually_changed INTEGER NOT NULL DEFAULT 0,
             FOREIGN KEY (office_hours_id) REFERENCES office_hours(id),
             FOREIGN KEY (bucket_id) REFERENCES buckets(id)
         );
@@ -66,10 +64,16 @@ def init_db():
         """
     )
 
-    # Older databases were created before buckets existed.
-    columns = [row["name"] for row in conn.execute("PRAGMA table_info(tickets)")]
-    if "bucket_id" not in columns:
-        conn.execute("ALTER TABLE tickets ADD COLUMN bucket_id INTEGER REFERENCES buckets(id)")
+    # Older databases are missing columns added since. Add them in place.
+    _add_missing_columns(conn, "tickets", {
+        "bucket_id": "INTEGER REFERENCES buckets(id)",
+        "class_section": "TEXT",
+        "overflow_count": "INTEGER NOT NULL DEFAULT 0",
+        "manually_changed": "INTEGER NOT NULL DEFAULT 0",
+    })
+    _add_missing_columns(conn, "buckets", {
+        "overflow_count": "INTEGER NOT NULL DEFAULT 0",
+    })
 
     existing = conn.execute("SELECT COUNT(*) AS n FROM office_hours").fetchone()["n"]
     if existing == 0:
@@ -82,28 +86,25 @@ def init_db():
         )
         oh_id = conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
         seed = [
-            ("Alex", "How do I debug a RecursionError?", "debugging"),
-            ("Jordan", "What will be on the midterm?", "exam"),
-            ("Sam", "Can you walk through assignment 3 part B?", "homework"),
+            ("Alex", "Lec A", "Can you explain how recursion works?", "understanding_topic"),
+            ("Jordan", "Lec A", "When is the midterm?", "quick_qa"),
+            ("Sam", "Lec B", "Why did I lose points on assignment 3?", "grading"),
         ]
-        for name, question, qtype in seed:
+        for name, section, question, category in seed:
             conn.execute(
                 """
-                INSERT INTO tickets (student_name, question, question_type, priority, office_hours_id)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO tickets
+                    (student_name, class_section, question, question_type, priority, office_hours_id)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (name, question, qtype, QUESTION_TYPES[qtype], oh_id),
+                (name, section, question, category, score(category), oh_id),
             )
 
     # Every ticket belongs to a bucket. Give any ticket without one its own bucket.
     orphans = conn.execute("SELECT * FROM tickets WHERE bucket_id IS NULL").fetchall()
     for ticket in orphans:
         bucket_id = create_bucket(
-            conn,
-            ticket["question"],
-            ticket["question_type"],
-            ticket["priority"],
-            ticket["office_hours_id"],
+            conn, ticket["question"], ticket["question_type"], ticket["office_hours_id"]
         )
         conn.execute("UPDATE tickets SET bucket_id = ? WHERE id = ?", (bucket_id, ticket["id"]))
 
@@ -111,14 +112,21 @@ def init_db():
     conn.close()
 
 
-def create_bucket(conn, title, question_type, priority, office_hours_id):
+def _add_missing_columns(conn, table, columns):
+    existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+    for name, definition in columns.items():
+        if name not in existing:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
+
+
+def create_bucket(conn, title, question_type, office_hours_id):
     """Start a new bucket from a student's question. Returns the new bucket id."""
     cursor = conn.execute(
         """
         INSERT INTO buckets (title, question_type, priority, office_hours_id)
         VALUES (?, ?, ?, ?)
         """,
-        (title, question_type, priority, office_hours_id),
+        (title, question_type, score(question_type), office_hours_id),
     )
     return cursor.lastrowid
 
