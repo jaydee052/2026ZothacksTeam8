@@ -37,8 +37,12 @@ def list_buckets():
     for row in rows:
         bucket = row_to_dict(row)
         # Students x 5 in the formula: more students sharing a question ranks it higher.
+        bucket["late"] = bool(bucket["late"])
         bucket["priority"] = score(
-            bucket["question_type"], bucket["member_count"], bucket["overflow_count"]
+            bucket["question_type"],
+            bucket["member_count"],
+            bucket["overflow_count"],
+            bucket["late"],
         )
         buckets.append(bucket)
 

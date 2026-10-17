@@ -3,6 +3,7 @@ from flask import Blueprint, jsonify, request
 
 from db import create_bucket, get_connection, row_to_dict
 from priority import score
+from sessions import has_started, pick_session
 from validation import category_error, clean, question_error
 
 bp = Blueprint("queue", __name__, url_prefix="/api/queue")
@@ -19,19 +20,17 @@ TICKETS_WITH_COUNT = """
 """
 
 
-def _open_session(conn):
-    return conn.execute(
-        "SELECT * FROM office_hours WHERE is_open = 1 ORDER BY id DESC LIMIT 1"
-    ).fetchone()
-
-
 def _with_priority(row):
     """Professor-changed tickets keep their set priority; others use the formula."""
     ticket = row_to_dict(row)
     ticket["manually_changed"] = bool(ticket["manually_changed"])
+    ticket["late"] = bool(ticket["late"])
     if not ticket["manually_changed"]:
         ticket["priority"] = score(
-            ticket["question_type"], ticket["student_count"], ticket["overflow_count"]
+            ticket["question_type"],
+            ticket["student_count"],
+            ticket["overflow_count"],
+            ticket["late"],
         )
     return ticket
 
@@ -66,19 +65,25 @@ def join_queue():
         return jsonify({"error": error}), 400
 
     conn = get_connection()
-    session = _open_session(conn)
-    office_hours_id = session["id"] if session else None
+    session, error = pick_session(conn, data.get("office_hours_id"))
+    if error:
+        conn.close()
+        return jsonify({"error": error}), 409
+
+    # Questions submitted after the session starts go to the back of the line.
+    late = has_started(session)
+
     # Every new question starts its own bucket that other students can join.
-    bucket_id = create_bucket(conn, question, question_type, office_hours_id)
+    bucket_id = create_bucket(conn, question, question_type, session["id"], late)
     cursor = conn.execute(
         """
         INSERT INTO tickets
             (student_name, class_section, question, question_type, priority,
-             office_hours_id, bucket_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+             office_hours_id, bucket_id, late)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (name, section, question, question_type, score(question_type),
-         office_hours_id, bucket_id),
+        (name, section, question, question_type, score(question_type, late=late),
+         session["id"], bucket_id, int(late)),
     )
     conn.commit()
     ticket = _get_ticket(conn, cursor.lastrowid)

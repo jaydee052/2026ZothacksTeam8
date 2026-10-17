@@ -53,18 +53,20 @@ Base URL: `http://localhost:5001`. Every endpoint returns JSON. When something g
 | GET | `/api/health` | — | `{"ok": true}` |
 | GET | `/api/categories` | — | `[{id, label, base_time, complexity}]` |
 | GET | `/api/queue` | — | Waiting tickets, highest priority first |
-| POST | `/api/queue` | `{student_name, class_section, question, question_type}` | New ticket (201) |
+| POST | `/api/queue` | `{student_name, class_section, question, question_type, office_hours_id?}` | New ticket (201). Without `office_hours_id`, it goes to the running session, or the next upcoming one. 409 if none. |
 | PATCH | `/api/queue/<id>` | any of `{status, priority, question_type, question, class_section}` | Updated ticket |
 | POST | `/api/queue/<id>/bump` | `{direction: "up" or "down"}` | Updated ticket |
 | GET | `/api/buckets` | `?question_type=` `?status=` | Buckets with `member_count` and `priority` |
 | POST | `/api/buckets/<id>/join` | `{student_name, class_section, question?}` | New ticket (201) |
-| GET | `/api/office_hours` | `?course=` `?is_open=true/false` | Sessions with `waiting_count` |
+| GET | `/api/office_hours` | `?course=` `?is_open=true/false` | Sessions with `waiting_count` and `state` (`upcoming` / `running` / `closed`) |
 | POST | `/api/office_hours` | `{course, location, starts_at, ends_at}` | New session, closed (201) |
 | PATCH | `/api/office_hours/<id>` | any of the above fields | Updated session |
 | POST | `/api/office_hours/<id>/open` | — | Opened session |
 | POST | `/api/office_hours/<id>/close` | — | `{session, moved_to, moved_count, warning?}` |
 
-**Ticket fields:** `id`, `student_name`, `class_section`, `question`, `question_type`, `priority`, `status` (`waiting` / `done`), `bucket_id`, `student_count`, `overflow_count`, `manually_changed`, `office_hours_id`, `created_at`
+**Ticket fields:** `id`, `student_name`, `class_section`, `question`, `question_type`, `priority`, `status` (`waiting` / `done`), `bucket_id`, `student_count`, `overflow_count`, `manually_changed`, `late`, `office_hours_id`, `created_at`
+
+Questions can be submitted before a session starts. Ones submitted after it starts have `late: true` and a priority of 0, so they go to the back of the line.
 
 Times use the format `2026-10-17T14:00`.
 
@@ -99,6 +101,7 @@ Times use the format `2026-10-17T14:00`.
 - [ ] Refresh automatically, e.g. every 5–10 seconds
 - [ ] Show the current session's location and hours from `GET /api/office_hours?is_open=true`
 - [ ] Show a message when no session is open
+- [ ] Let students pick an upcoming session to queue for, and show "joined late" for late tickets
 
 ### Professor: queue management
 - [ ] Queue list with priority, category, student count, and badges for "pushed from last session" and "manually changed"
@@ -141,6 +144,7 @@ Times use the format `2026-10-17T14:00`.
 - [x] Buckets: every new question starts a bucket; list and join (`routes/buckets/`)
 - [x] Office hours: list, create, edit, open, close (`routes/office_hours/`). *Not committed yet.*
 - [x] Closing a session pushes waiting students to the next one and doubles their score
+- [x] Questions can be submitted before a session starts; questions submitted after the start go to the back (`sessions.py`, OnTime term)
 
 ### Queue
 - [ ] Filter `GET /api/queue` to one session (`?office_hours_id=`) so the queue shows only the current session

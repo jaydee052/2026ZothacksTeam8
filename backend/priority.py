@@ -1,6 +1,10 @@
 """Queue priority logic. See "Priority Formula" in spec.md.
 
-    Priority Score = (Base Time + (Complex x 3) + (Students x 5)) x Overflow
+    Priority Score = (Base Time + (Complex x 3) + (Students x 5)) x Overflow x OnTime
+
+OnTime is 1 for questions submitted before the session started and 0 for
+questions submitted after. Late questions all score 0, so they sit behind
+every on-time question, in the order they arrived.
 
 Higher scores are served first. (The spec lists this as an open question.)
 """
@@ -29,10 +33,19 @@ def overflow_term(overflow_count):
     return 2 ** max(overflow_count, 0)
 
 
-def score(category, student_count=1, overflow_count=0):
+def on_time_term(late):
+    """1 if the question came in before the session started, 0 if after."""
+    return 0 if late else 1
+
+
+def score(category, student_count=1, overflow_count=0, late=False):
     info = CATEGORIES.get(category, CATEGORIES[FALLBACK_CATEGORY])
     return (
-        info["base_time"]
-        + info["complexity"] * COMPLEXITY_WEIGHT
-        + max(student_count, 1) * STUDENT_WEIGHT
-    ) * overflow_term(overflow_count)
+        (
+            info["base_time"]
+            + info["complexity"] * COMPLEXITY_WEIGHT
+            + max(student_count, 1) * STUDENT_WEIGHT
+        )
+        * overflow_term(overflow_count)
+        * on_time_term(late)
+    )

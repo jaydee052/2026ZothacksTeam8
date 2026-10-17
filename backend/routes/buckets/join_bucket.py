@@ -37,22 +37,24 @@ def join_bucket(bucket_id):
         conn.close()
         return jsonify({"error": "bucket is no longer open"}), 409
 
-    # The student takes on the bucket's category.
+    # The student takes on the bucket's category and its place in line. Joining a
+    # bucket from before the session started keeps the student with that group.
     cursor = conn.execute(
         """
         INSERT INTO tickets
             (student_name, class_section, question, question_type, priority,
-             office_hours_id, bucket_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+             office_hours_id, bucket_id, late)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             name,
             section,
             question or bucket["title"],
             bucket["question_type"],
-            score(bucket["question_type"]),
+            score(bucket["question_type"], late=bucket["late"]),
             bucket["office_hours_id"],
             bucket_id,
+            bucket["late"],
         ),
     )
     conn.commit()

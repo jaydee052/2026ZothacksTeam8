@@ -1,4 +1,5 @@
 """Shared checks for office hours details (used by create and update)."""
+from sessions import has_started, is_closed
 from validation import clean, parse_time
 
 TEXT_FIELDS = ("course", "location")
@@ -40,9 +41,18 @@ def read_fields(data, current=None):
 
 
 def session_to_dict(row):
-    """A session as JSON, with is_open as true/false instead of 1/0."""
+    """A session as JSON, with is_open as true/false and a state the frontend can show.
+
+    state: "upcoming" (taking questions, not started), "running", or "closed".
+    """
     if row is None:
         return None
     session = dict(row)
     session["is_open"] = bool(session["is_open"])
+    if is_closed(session):
+        session["state"] = "closed"
+    elif has_started(session):
+        session["state"] = "running"
+    else:
+        session["state"] = "upcoming"
     return session

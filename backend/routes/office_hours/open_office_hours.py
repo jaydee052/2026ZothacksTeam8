@@ -16,6 +16,9 @@ def open_office_hours(session_id):
     if session is None:
         conn.close()
         return jsonify({"error": "office hours not found"}), 404
+    if session["closed_at"] is not None:
+        conn.close()
+        return jsonify({"error": "office hours already ended"}), 409
     if session["is_open"]:
         conn.close()
         return jsonify({"error": "office hours already open"}), 409
