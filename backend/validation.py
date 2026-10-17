@@ -5,6 +5,9 @@ from priority import CATEGORIES
 
 MAX_QUESTION_WORDS = 25
 
+# waiting = in line, done = helped, left = left the line without being helped
+TICKET_STATUSES = ("waiting", "done", "left")
+
 
 def clean(value):
     return (value or "").strip()
@@ -16,6 +19,12 @@ def question_error(question):
         return "question is required"
     if len(question.split()) > MAX_QUESTION_WORDS:
         return f"question must be {MAX_QUESTION_WORDS} words or fewer"
+    return None
+
+
+def status_error(status):
+    if status not in TICKET_STATUSES:
+        return "status must be one of: " + ", ".join(TICKET_STATUSES)
     return None
 
 

@@ -4,4 +4,9 @@ from flask import Blueprint
 
 bp = Blueprint("buckets", __name__, url_prefix="/api/buckets")
 
-from . import join_bucket, list_buckets  # noqa: E402,F401  (registers the routes)
+from . import (  # noqa: E402,F401  (registers the routes)
+    join_bucket,
+    list_buckets,
+    resolve_bucket,
+    suggest_buckets,
+)

@@ -3,8 +3,15 @@
 A session is upcoming until it starts, then running until the professor closes it.
 Questions can be submitted to upcoming and running sessions, but questions
 submitted after the start go to the back of the line (see priority.py).
+
+Note: "session" here means an office hours session (models.OfficeHours),
+not a database session. Database sessions are called `db`.
 """
 from datetime import datetime
+
+from sqlalchemy import and_, or_, select
+
+from models import OfficeHours
 
 
 def now():
@@ -14,49 +21,52 @@ def now():
 
 def has_started(session):
     """True once the professor opens it or its start time passes, whichever is first."""
-    return bool(session["is_open"]) or now() >= session["starts_at"]
+    return bool(session.is_open) or now() >= session.starts_at
 
 
 def is_closed(session):
-    return session["closed_at"] is not None
+    return session.closed_at is not None
 
 
-def pick_session(conn, requested_id=None):
+def pick_session(db, requested_id=None):
     """Choose the session a new question goes into. Returns (session, error).
 
     If the student picked one, use it (as long as it hasn't been closed).
     Otherwise use the session running now, or the next upcoming one.
     """
     if requested_id is not None:
-        session = conn.execute(
-            "SELECT * FROM office_hours WHERE id = ?", (requested_id,)
-        ).fetchone()
+        try:
+            session = db.get(OfficeHours, int(requested_id))
+        except (TypeError, ValueError):
+            session = None
         if session is None:
             return None, "office hours not found"
         if is_closed(session):
             return None, "those office hours have already ended"
         return session, None
 
-    running = conn.execute(
-        """
-        SELECT * FROM office_hours
-        WHERE closed_at IS NULL
-          AND (is_open = 1 OR (starts_at <= ? AND ends_at > ?))
-        ORDER BY starts_at LIMIT 1
-        """,
-        (now(), now()),
-    ).fetchone()
+    current = now()
+    running = db.scalar(
+        select(OfficeHours)
+        .where(
+            OfficeHours.closed_at.is_(None),
+            or_(
+                OfficeHours.is_open.is_(True),
+                and_(OfficeHours.starts_at <= current, OfficeHours.ends_at > current),
+            ),
+        )
+        .order_by(OfficeHours.starts_at)
+        .limit(1)
+    )
     if running is not None:
         return running, None
 
-    upcoming = conn.execute(
-        """
-        SELECT * FROM office_hours
-        WHERE closed_at IS NULL AND starts_at > ?
-        ORDER BY starts_at LIMIT 1
-        """,
-        (now(),),
-    ).fetchone()
+    upcoming = db.scalar(
+        select(OfficeHours)
+        .where(OfficeHours.closed_at.is_(None), OfficeHours.starts_at > current)
+        .order_by(OfficeHours.starts_at)
+        .limit(1)
+    )
     if upcoming is not None:
         return upcoming, None
 

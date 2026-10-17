@@ -3,10 +3,13 @@
 Query params (all optional):
   course   only this course, e.g. "ICS 32"
   is_open  "true" for open sessions only, "false" for closed only
+  state    "upcoming", "running" or "closed"
 """
 from flask import jsonify, request
+from sqlalchemy import and_, func, select
 
-from db import get_connection
+from db import get_db
+from models import OfficeHours, Ticket
 
 from . import bp
 from .fields import session_to_dict
@@ -14,28 +17,34 @@ from .fields import session_to_dict
 
 @bp.get("")
 def list_office_hours():
-    sql = """
-        SELECT o.*, COUNT(t.id) AS waiting_count
-        FROM office_hours o
-        LEFT JOIN tickets t ON t.office_hours_id = o.id AND t.status = 'waiting'
-        WHERE 1 = 1
-    """
-    params = []
+    query = (
+        select(OfficeHours, func.count(Ticket.id).label("waiting_count"))
+        .outerjoin(
+            Ticket,
+            and_(Ticket.office_hours_id == OfficeHours.id, Ticket.status == "waiting"),
+        )
+        .group_by(OfficeHours.id)
+        .order_by(OfficeHours.starts_at)
+    )
 
     course = (request.args.get("course") or "").strip()
     if course:
-        sql += " AND o.course = ?"
-        params.append(course)
+        query = query.where(OfficeHours.course == course)
 
     is_open = (request.args.get("is_open") or "").strip().lower()
     if is_open in ("true", "false"):
-        sql += " AND o.is_open = ?"
-        params.append(1 if is_open == "true" else 0)
+        query = query.where(OfficeHours.is_open.is_(is_open == "true"))
 
-    sql += " GROUP BY o.id ORDER BY o.starts_at"
+    state = (request.args.get("state") or "").strip().lower()
+    if state and state not in ("upcoming", "running", "closed"):
+        return jsonify({"error": "state must be one of: upcoming, running, closed"}), 400
 
-    conn = get_connection()
-    rows = conn.execute(sql, params).fetchall()
-    conn.close()
-
-    return jsonify([session_to_dict(row) for row in rows])
+    with get_db() as db:
+        sessions = []
+        for session, waiting_count in db.execute(query).all():
+            data = session_to_dict(session)
+            if state and data["state"] != state:
+                continue
+            data["waiting_count"] = waiting_count
+            sessions.append(data)
+    return jsonify(sessions)

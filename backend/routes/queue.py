@@ -1,16 +1,20 @@
 # Route blueprints for the office hours queue API.
 from flask import Blueprint, jsonify, request
+from sqlalchemy import func, select
 
-from db import create_bucket, get_connection
+from bucket_rules import sync_bucket_status
+from db import create_bucket, get_db
+from models import Bucket, OfficeHours, Ticket
 from priority import score
 from queue_order import get_ticket, session_line
 from sessions import has_started, pick_session
-from validation import category_error, clean, question_error
+from validation import category_error, clean, question_error, status_error
 
 bp = Blueprint("queue", __name__, url_prefix="/api/queue")
 
 # How far one professor "bump" moves a ticket.
 BUMP_AMOUNT = 15
+
 
 @bp.get("")
 def list_queue():
@@ -20,41 +24,29 @@ def list_queue():
     No filter: every session's line, grouped by session start time.
     Positions count from 1 within each session.
     """
-    conn = get_connection()
     raw_id = request.args.get("office_hours_id")
 
-    if raw_id is not None:
-        try:
-            office_hours_id = int(raw_id)
-        except ValueError:
-            conn.close()
-            return jsonify({"error": "office_hours_id must be a number"}), 400
-        session = conn.execute(
-            "SELECT id FROM office_hours WHERE id = ?", (office_hours_id,)
-        ).fetchone()
-        if session is None:
-            conn.close()
-            return jsonify({"error": "office hours not found"}), 404
-        line = session_line(conn, office_hours_id)
-        conn.close()
-        return jsonify(line)
+    with get_db() as db:
+        if raw_id is not None:
+            try:
+                office_hours_id = int(raw_id)
+            except ValueError:
+                return jsonify({"error": "office_hours_id must be a number"}), 400
+            if db.get(OfficeHours, office_hours_id) is None:
+                return jsonify({"error": "office hours not found"}), 404
+            return jsonify(session_line(db, office_hours_id))
 
-    # Sessions that have someone waiting, earliest first. Tickets with no
-    # session (from very old databases) come last.
-    session_ids = [
-        row["office_hours_id"]
-        for row in conn.execute(
-            """
-            SELECT DISTINCT t.office_hours_id
-            FROM tickets t LEFT JOIN office_hours o ON o.id = t.office_hours_id
-            WHERE t.status = 'waiting'
-            ORDER BY o.starts_at IS NULL, o.starts_at
-            """
-        )
-    ]
-    line = [ticket for sid in session_ids for ticket in session_line(conn, sid)]
-    conn.close()
-    return jsonify(line)
+        # Sessions that have someone waiting, earliest first. Tickets with no
+        # session (from very old databases) come last.
+        session_ids = db.scalars(
+            select(Ticket.office_hours_id)
+            .distinct()
+            .outerjoin(OfficeHours, OfficeHours.id == Ticket.office_hours_id)
+            .where(Ticket.status == "waiting")
+            .order_by(OfficeHours.starts_at.is_(None), OfficeHours.starts_at)
+        ).all()
+        line = [ticket for sid in session_ids for ticket in session_line(db, sid)]
+        return jsonify(line)
 
 
 @bp.post("")
@@ -71,31 +63,29 @@ def join_queue():
     if error:
         return jsonify({"error": error}), 400
 
-    conn = get_connection()
-    session, error = pick_session(conn, data.get("office_hours_id"))
-    if error:
-        conn.close()
-        return jsonify({"error": error}), 409
+    with get_db() as db:
+        session, error = pick_session(db, data.get("office_hours_id"))
+        if error:
+            return jsonify({"error": error}), 409
 
-    # Questions submitted after the session starts go to the back of the line.
-    late = has_started(session)
+        # Questions submitted after the session starts go to the back of the line.
+        late = has_started(session)
 
-    # Every new question starts its own bucket that other students can join.
-    bucket_id = create_bucket(conn, question, question_type, session["id"], late)
-    cursor = conn.execute(
-        """
-        INSERT INTO tickets
-            (student_name, class_section, question, question_type, priority,
-             office_hours_id, bucket_id, late)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (name, section, question, question_type, score(question_type, late=late),
-         session["id"], bucket_id, int(late)),
-    )
-    conn.commit()
-    ticket = get_ticket(conn, cursor.lastrowid)
-    conn.close()
-    return jsonify(ticket), 201
+        # Every new question starts its own bucket that other students can join.
+        bucket = create_bucket(db, question, question_type, session.id, late)
+        ticket = Ticket(
+            student_name=name,
+            class_section=section,
+            question=question,
+            question_type=question_type,
+            priority=score(question_type),
+            office_hours_id=session.id,
+            bucket_id=bucket.id,
+            late=late,
+        )
+        db.add(ticket)
+        db.commit()
+        return jsonify(get_ticket(db, ticket.id)), 201
 
 
 @bp.patch("/<int:ticket_id>")
@@ -116,25 +106,60 @@ def update_ticket(ticket_id):
         error = category_error(updates["question_type"])
         if error:
             return jsonify({"error": error}), 400
+    if "status" in updates:
+        updates["status"] = clean(updates["status"]).lower()
+        error = status_error(updates["status"])
+        if error:
+            return jsonify({"error": error}), 400
 
     # A professor setting the priority by hand overrides the formula.
     if "priority" in updates:
-        updates["manually_changed"] = 1
+        updates["manually_changed"] = True
     elif "question_type" in updates:
         updates["priority"] = score(updates["question_type"])
 
-    assignments = ", ".join(f"{key} = ?" for key in updates)
-    values = list(updates.values()) + [ticket_id]
+    with get_db() as db:
+        ticket = db.get(Ticket, ticket_id)
+        if ticket is None:
+            return jsonify({"error": "ticket not found"}), 404
 
-    conn = get_connection()
-    conn.execute(f"UPDATE tickets SET {assignments} WHERE id = ?", values)
-    conn.commit()
-    ticket = get_ticket(conn, ticket_id)
-    conn.close()
+        old_bucket_id = ticket.bucket_id
+        category_changed = (
+            "question_type" in updates and updates["question_type"] != ticket.question_type
+        )
+        for key, value in updates.items():
+            setattr(ticket, key, value)
+        if "status" in updates:
+            ticket.pinned_position = None  # a pin only means something while waiting
+        db.flush()
 
-    if ticket is None:
-        return jsonify({"error": "ticket not found"}), 404
-    return jsonify(ticket)
+        # A new category means a different kind of question than the rest of the
+        # group. If others share the group, this student gets a group of their own;
+        # if they're alone in it, the group's category changes with them.
+        if category_changed and old_bucket_id is not None:
+            others = db.scalar(
+                select(func.count(Ticket.id)).where(
+                    Ticket.bucket_id == old_bucket_id,
+                    Ticket.status == "waiting",
+                    Ticket.id != ticket.id,
+                )
+            )
+            if others:
+                bucket = create_bucket(
+                    db, ticket.question, ticket.question_type, ticket.office_hours_id, ticket.late
+                )
+                ticket.bucket_id = bucket.id
+            else:
+                db.get(Bucket, old_bucket_id).question_type = ticket.question_type
+            db.flush()
+
+        # Close a bucket once nobody in it is waiting, or reopen it if someone is
+        # back to waiting.
+        if "status" in updates or category_changed:
+            sync_bucket_status(db, old_bucket_id)
+            sync_bucket_status(db, ticket.bucket_id)
+        db.commit()
+        return jsonify(get_ticket(db, ticket_id))
 
 
 @bp.post("/<int:ticket_id>/bump")
@@ -143,18 +168,24 @@ def bump_ticket(ticket_id):
     direction = (request.get_json(silent=True) or {}).get("direction", "up")
     delta = BUMP_AMOUNT if direction == "up" else -BUMP_AMOUNT
 
-    conn = get_connection()
-    ticket = get_ticket(conn, ticket_id)
-    if ticket is None:
-        conn.close()
-        return jsonify({"error": "ticket not found"}), 404
+    with get_db() as db:
+        shown = get_ticket(db, ticket_id)
+        if shown is None:
+            return jsonify({"error": "ticket not found"}), 404
 
-    # Start from the priority currently shown, then mark it as manually changed.
-    conn.execute(
-        "UPDATE tickets SET priority = ?, manually_changed = 1 WHERE id = ?",
-        (ticket["priority"] + delta, ticket_id),
-    )
-    conn.commit()
-    updated = get_ticket(conn, ticket_id)
-    conn.close()
-    return jsonify(updated)
+        # Late questions are already at the back. Bumping one up moves it into the
+        # main line; bumping it down has nowhere to go.
+        if shown["in_late_section"] and delta < 0:
+            return jsonify({
+                "error": "this question is already in the late section at the back of the line"
+            }), 409
+
+        # Start from the priority currently shown, then mark it as manually changed.
+        # A manually changed question is ranked in the main line, even if it was late.
+        # Bumping also removes a pin, since the professor is now moving it by score.
+        ticket = db.get(Ticket, ticket_id)
+        ticket.priority = shown["priority"] + delta
+        ticket.manually_changed = True
+        ticket.pinned_position = None
+        db.commit()
+        return jsonify(get_ticket(db, ticket_id))
