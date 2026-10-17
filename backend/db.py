@@ -32,6 +32,17 @@ def init_db():
             is_open INTEGER NOT NULL DEFAULT 1
         );
 
+        CREATE TABLE IF NOT EXISTS buckets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            question_type TEXT NOT NULL,
+            priority INTEGER NOT NULL,
+            status TEXT NOT NULL DEFAULT 'waiting',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            office_hours_id INTEGER,
+            FOREIGN KEY (office_hours_id) REFERENCES office_hours(id)
+        );
+
         CREATE TABLE IF NOT EXISTS tickets (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             student_name TEXT NOT NULL,
@@ -41,7 +52,9 @@ def init_db():
             status TEXT NOT NULL DEFAULT 'waiting',
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             office_hours_id INTEGER,
-            FOREIGN KEY (office_hours_id) REFERENCES office_hours(id)
+            bucket_id INTEGER,
+            FOREIGN KEY (office_hours_id) REFERENCES office_hours(id),
+            FOREIGN KEY (bucket_id) REFERENCES buckets(id)
         );
 
         CREATE TABLE IF NOT EXISTS syllabi (
@@ -52,6 +65,11 @@ def init_db():
         );
         """
     )
+
+    # Older databases were created before buckets existed.
+    columns = [row["name"] for row in conn.execute("PRAGMA table_info(tickets)")]
+    if "bucket_id" not in columns:
+        conn.execute("ALTER TABLE tickets ADD COLUMN bucket_id INTEGER REFERENCES buckets(id)")
 
     existing = conn.execute("SELECT COUNT(*) AS n FROM office_hours").fetchone()["n"]
     if existing == 0:
@@ -77,8 +95,32 @@ def init_db():
                 (name, question, qtype, QUESTION_TYPES[qtype], oh_id),
             )
 
+    # Every ticket belongs to a bucket. Give any ticket without one its own bucket.
+    orphans = conn.execute("SELECT * FROM tickets WHERE bucket_id IS NULL").fetchall()
+    for ticket in orphans:
+        bucket_id = create_bucket(
+            conn,
+            ticket["question"],
+            ticket["question_type"],
+            ticket["priority"],
+            ticket["office_hours_id"],
+        )
+        conn.execute("UPDATE tickets SET bucket_id = ? WHERE id = ?", (bucket_id, ticket["id"]))
+
     conn.commit()
     conn.close()
+
+
+def create_bucket(conn, title, question_type, priority, office_hours_id):
+    """Start a new bucket from a student's question. Returns the new bucket id."""
+    cursor = conn.execute(
+        """
+        INSERT INTO buckets (title, question_type, priority, office_hours_id)
+        VALUES (?, ?, ?, ?)
+        """,
+        (title, question_type, priority, office_hours_id),
+    )
+    return cursor.lastrowid
 
 
 def row_to_dict(row):

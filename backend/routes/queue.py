@@ -1,6 +1,6 @@
 from flask import Blueprint, jsonify, request
 
-from db import get_connection, row_to_dict
+from db import create_bucket, get_connection, row_to_dict
 from priority import score_question
 
 bp = Blueprint("queue", __name__, url_prefix="/api/queue")
@@ -39,12 +39,16 @@ def join_queue():
     conn = get_connection()
     session = _open_session(conn)
     priority = score_question(question_type, question)
+    office_hours_id = session["id"] if session else None
+    # Every new question starts its own bucket that other students can join.
+    bucket_id = create_bucket(conn, question, question_type, priority, office_hours_id)
     cursor = conn.execute(
         """
-        INSERT INTO tickets (student_name, question, question_type, priority, office_hours_id)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO tickets
+            (student_name, question, question_type, priority, office_hours_id, bucket_id)
+        VALUES (?, ?, ?, ?, ?, ?)
         """,
-        (name, question, question_type, priority, session["id"] if session else None),
+        (name, question, question_type, priority, office_hours_id, bucket_id),
     )
     conn.commit()
     ticket = conn.execute(
