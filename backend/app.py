@@ -3,7 +3,9 @@ from flask import Flask
 from flask_cors import CORS
 
 from db import init_db
-from routes import buckets, categories, office_hours, queue, queue_ticket, syllabus
+from routes import (
+    buckets, categories, office_hours, professors, queue, queue_ticket, students, syllabus,
+)
 
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*"}})
@@ -20,6 +22,8 @@ app.register_blueprint(office_hours.bp)
 app.register_blueprint(syllabus.bp)
 app.register_blueprint(buckets.bp)
 app.register_blueprint(categories.bp)
+app.register_blueprint(students.bp)
+app.register_blueprint(professors.bp)
 
 
 @app.get("/api/health")

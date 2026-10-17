@@ -65,6 +65,46 @@ def init_db():
             stored_path TEXT NOT NULL,
             uploaded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
+
+        -- Class data from the Anteater API (see anteater.py). "data" holds the
+        -- full section or course as JSON; the other columns are for lookups.
+        -- Students and professors share course_id, e.g. "COMPSCI161".
+        CREATE TABLE IF NOT EXISTS students (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS student_sections (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id INTEGER NOT NULL,
+            section_code TEXT NOT NULL,
+            year TEXT NOT NULL,
+            quarter TEXT NOT NULL,
+            course_id TEXT NOT NULL,
+            data TEXT NOT NULL,
+            added_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (student_id, section_code, year, quarter),
+            FOREIGN KEY (student_id) REFERENCES students(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS professors (
+            ucinetid TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            title TEXT,
+            email TEXT,
+            department TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS professor_courses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ucinetid TEXT NOT NULL,
+            course_id TEXT NOT NULL,
+            year TEXT NOT NULL,
+            quarter TEXT NOT NULL,
+            data TEXT NOT NULL,
+            UNIQUE (ucinetid, course_id, year, quarter),
+            FOREIGN KEY (ucinetid) REFERENCES professors(ucinetid)
+        );
         """
     )
 
@@ -115,6 +155,11 @@ def init_db():
                 """,
                 (name, section, question, category, score(category), oh_id),
             )
+
+    # Hardcoded demo student (id 1). Classes are added through
+    # POST /api/students/1/sections, e.g. section code 34190 (COMPSCI 161).
+    if conn.execute("SELECT COUNT(*) AS n FROM students").fetchone()["n"] == 0:
+        conn.execute("INSERT INTO students (name) VALUES ('Demo Student')")
 
     # Every ticket belongs to a bucket. Give any ticket without one its own bucket.
     orphans = conn.execute("SELECT * FROM tickets WHERE bucket_id IS NULL").fetchall()
