@@ -26,11 +26,14 @@ Feature details are in [spec.md](spec.md).
   | Research | 15 | 5 | 35 |
   | Personal | 10 | 3 | 24 |
 
-- [ ] How a professor logs in, or whether the professor screen is simply a separate page with no login for the demo.
+- [ ] How a professor logs in, or whether the professor screen is simply a separate page with no login for the demo. (Students use a hardcoded account for now; see [ui-spec.md](ui-spec.md) section 1.)
 - [ ] Whether tickets store a course (e.g. "ICS 32") as well as a class section. This is needed if more than one course runs office hours at the same time.
 - [ ] What the class section field holds, such as "Lec A" or an Anteater API section code like "35500".
 - [ ] Whether TA queues are in scope for the hackathon or a stretch goal.
 - [ ] When a session is already running, should a student who doesn't pick a session join it as late, or be offered the next session to be on time? (Currently they join the running one as late. The frontend can offer the choice by sending `office_hours_id`.)
+- [ ] Should places in line count **groups** (a group of 3 is one spot, as the screen does now) or **students** (as the backend's `position` does)? This affects "You are #N" and where drag-and-drop puts a group.
+- [ ] Does the professor page show one class at a time, or every class together, color coded? (ui-spec.md sections 2 and 8)
+- [ ] Should "Add classes" pick from courses that have sessions scheduled, or from all real UCI classes (from the Anteater API)?
 - [x] Professor bumps on late questions: bumping up moves the question into the main line at its score + 15; bumping down is refused, since it's already at the back.
 
 ### Running the project
@@ -107,6 +110,17 @@ Times use the format `2026-10-17T14:00`.
 
 The app is called **zot hours**. It has a Student view and a Professor view, switched with tabs at the top. If the backend isn't running, it switches to **demo mode**: it uses sample data saved in the browser, so the screens still work on their own. A "Demo data" badge shows when that's happening.
 
+### Next up (step-by-step details in [ui-spec.md](ui-spec.md))
+Start with the first item; the classes and color items build on it.
+- [ ] 1. Hardcoded student account and API settings in one config file (do first)
+- [ ] 2. Classes: "See classes" / "Add classes" in the top bar, and a page for each class
+- [ ] 3. Profile button showing the student's name, section and classes
+- [ ] 4. "Same question?" Join button on every question in the line, not just the one suggested while typing
+- [ ] 5. "Leave the line" button (status `left`) next to "Fixed it, thanks" (status `done`)
+- [ ] 6. Professor: drag and drop to reorder the line, replacing the up/down arrows (uses pinning)
+- [ ] 7. Professor: show names as "Jordan + 5 others", with the full list on hover
+- [ ] 8. Color code each class on the class pages and the professor page
+
 ### Files
 | File | What it does |
 |---|---|
@@ -152,6 +166,7 @@ The backend's late rule changed after these screens were written. Late questions
 - [x] "Join the group" or "Keep mine separate" buttons → `POST /api/buckets/<id>/join`
 - [x] Shows how many classmates are waiting on it, and that joining keeps the group's place in line even after the session starts
 - [ ] Show more than one suggestion when several match (the backend returns up to 5)
+- [ ] Join button on every question in the line (see Next up #4)
 
 ### Student: queue view
 - [x] "The line right now": each group's question, number of students and estimated minutes. Names aren't shown to other students.
@@ -159,22 +174,22 @@ The backend's late rule changed after these screens were written. Late questions
 - [x] Refreshes automatically every 4 seconds
 - [x] Session status at the top: "ICS 32 starts Mon 2:00 PM", "is open" or "has ended", plus the location
 - [x] Message when nobody is waiting: "Nobody's waiting. Ask away and you'll be first."
-- [ ] Decide which place-in-line number to show. The screen counts **groups** (a group of 3 counts as one spot); the backend's `position` counts **students**.
+- [ ] Place-in-line number: waiting on the groups vs. students decision (see Decisions)
 
 ### Professor: queue management
 - [x] Headline: "7 students, 4 conversations"
 - [x] "Next up" card for the top group: question, names, estimated minutes, and minutes saved by helping them together
-- [x] Groups shown together, with all the students' names
+- [x] Groups shown together, with all the students' names (to become "Jordan + 5 others", see Next up #7)
 - [x] Badges: "moved by you", "pushed from last session", "joined late"
 - [x] Divider before the late section, and no down arrow on late-section groups
 - [x] "Help" / "Help together" button marks the whole group done → `POST /api/buckets/<id>/resolve`
-- [x] Up/down buttons → `POST /api/queue/<id>/bump` (moves every student in the group)
+- [x] Up/down buttons → `POST /api/queue/<id>/bump` (moves every student in the group). To be replaced by drag and drop (Next up #6).
 - [x] "Today so far": students helped, minutes left in the queue, minutes saved by grouping (the helped count is kept in that browser only)
 - [x] "What's coming up": bar chart of waiting questions by category
 - [ ] Show each student's own wording of the question inside a group (`members` from `GET /api/buckets`)
 - [ ] Edit a ticket's category or priority
-- [ ] Pin a group to a spot → `POST /api/queue/<id>/pin` (backend ready), and show a "pinned" badge
-- [ ] "Leave the line" button for students → `POST /api/queue/<id>/leave` (today "Fixed it, thanks" marks them done instead)
+- [ ] Pin a group to a spot and show a "pinned" badge, as part of drag and drop (Next up #6; backend ready: `POST /api/queue/<id>/pin`)
+- [ ] "Leave the line" button for students (Next up #5; backend ready: `POST /api/queue/<id>/leave`)
 
 ### Professor: office hours
 - [x] Edit the current session's location and times → `PATCH /api/office_hours/<id>`
@@ -260,6 +275,10 @@ The backend's late rule changed after these screens were written. Late questions
 - [ ] One consistent error format and status codes everywhere
 - [ ] Add a `course` field to tickets if the team decides to (see Decisions)
 
+### Classes (for the frontend's class pages, ui-spec.md section 2)
+- [ ] Optional: `GET /api/courses`, a list of courses that have sessions, for the "Add classes" picker (the frontend can work it out from `GET /api/office_hours` for now)
+- [ ] Optional: save each student's classes on the server, once there are real accounts (for now the list lives in the browser)
+
 ---
 
 ## Anteater API connection
@@ -287,6 +306,7 @@ UCI's Anteater API provides course and section data. Check its documentation for
 ### Using the data
 - [ ] Check `class_section` on `POST /api/queue` against real sections (coordinate with Backend)
 - [ ] Fill in course names and instructors when creating office hours
+- [ ] Provide the list of real UCI classes for the frontend's "Add classes" picker, if the team chooses that (see Decisions)
 - [ ] Optional: get instructor office hours, if Anteater has them, as an alternative to syllabus upload
 
 ### Testing
