@@ -34,6 +34,8 @@ Feature details are in [spec.md](spec.md).
 - [x] Professor bumps on late questions: bumping up moves the question into the main line at its score + 15; bumping down is refused, since it's already at the back.
 
 ### Running the project
+- **Easiest:** from the project folder, run `./dev.sh`. It starts the backend and frontend together, installs packages on the first run (and again after a pull changes them), and stops both when you press Ctrl+C.
+- Or run them separately:
 - Backend, first time:
   ```bash
   cd backend
@@ -97,67 +99,94 @@ Times use the format `2026-10-17T14:00`.
 
 ## Frontend
 
+The app is called **zot hours**. It has a Student view and a Professor view, switched with tabs at the top. If the backend isn't running, it switches to **demo mode**: it uses sample data saved in the browser, so the screens still work on their own. A "Demo data" badge shows when that's happening.
+
+### Files
+| File | What it does |
+|---|---|
+| `frontend/index.html` | The page shell: title "zot hours", the Figtree font, and dark/light mode remembered from last visit |
+| `frontend/src/main.jsx` | Starts the React app and loads the styles |
+| `frontend/src/App.jsx` | All the screens: the top bar, the Student view, the Professor view and the "schedule a new session" form. Refreshes the line every 4 seconds. |
+| `frontend/src/api.js` | Every call to the backend, in one place. Also holds the demo-mode version of each call (sample data in the browser) for when the backend is down. |
+| `frontend/src/App.css` | Layout and look of the screens, including phone-size layouts |
+| `frontend/src/index.css` | Colors for dark and light mode, base fonts and spacing |
+
+### Fixes needed to match the latest backend
+The backend's late rule changed after these screens were written. Late questions now keep their real score and sit in a separate late section, instead of scoring 0.
+- [ ] **Line order:** `groupUp` in `App.jsx` re-sorts groups by score, so a late question with a high score (e.g. Research, 35) would show above on-time questions. Keep the order the backend sends (or sort by `in_late_section` first).
+- [ ] **Late divider and badge:** use `in_late_section` instead of `late`. A late question the professor moved up has `late: true` but is back in the main line.
+- [ ] **Down button:** hide it for groups in the late section. The backend refuses those (409) and the professor would see an error.
+- [ ] **"You'd be Nth in line" estimate:** it treats a new question as score 0 once the session is running. Use "behind everyone already waiting" instead.
+- [ ] **Demo mode:** `score()` in `api.js` still returns 0 for late questions. Update it to match the backend: real score, late section ordered by arrival.
+- [ ] Remove the committed `.DS_Store` files and add `.DS_Store` to `.gitignore`
+
 ### Setup
-- [ ] Replace the Vite starter page in `frontend/src/App.jsx`
-- [ ] Add `VITE_API_URL=http://localhost:5001` in `frontend/.env`, or set up a proxy in `vite.config.js`
-- [ ] Create one small API helper file (e.g. `src/api.js`) with a function for each endpoint, so screens don't repeat `fetch` code
-- [ ] Add page switching between the Student and Professor views (`react-router-dom`, or a simple tab toggle)
-- [ ] Pick a style approach (plain CSS, Tailwind or a component library) and a basic color/font theme
-- [ ] Show loading and error states the same way everywhere
+- [x] Replace the Vite starter page in `frontend/src/App.jsx`
+- [x] Point the app at the backend. Defaults to `http://localhost:5001/api`; to change it, set `VITE_API_URL` in `frontend/.env`, **including `/api` at the end**.
+- [x] One API helper file (`src/api.js`) with a function for each backend call
+- [x] Switching between the Student and Professor views (tabs at the top, remembered between visits)
+- [x] Style approach: plain CSS, Figtree font, dark and light themes
+- [x] Errors from the backend show as a short pop-up message at the bottom
+- [x] Demo mode when the backend isn't reachable, with a "Reset demo data" button
 
 ### Student: join the queue
-- [ ] Form fields: name, class section, question, category
-- [ ] Session picker: list sessions with `state` `upcoming` or `running` from `GET /api/office_hours`, and send the chosen `office_hours_id`
-- [ ] Warn before submitting to a running session: "This session has started. Your question will go to the back of the line."
-- [ ] Fill the category dropdown from `GET /api/categories`
-- [ ] Live word counter on the question box ("12 / 25 words"); block submitting past 25
-- [ ] Show the API's error message if a submission is rejected
-- [ ] On success, show the student's place in the queue and their ticket details, including a "joined late" note if `late` is true
-- [ ] If the API says there's no upcoming session, show "No office hours scheduled yet"
+- [x] Form fields: name, class section, question, category (name and section are remembered for next time)
+- [x] Category buttons filled from `GET /api/categories`
+- [x] Live word counter ("12/25 words"); can't submit past 25
+- [x] Warn before submitting to a running session: "This session has started. Your question will go to the back of the line."
+- [x] Show the API's error message if a submission is rejected
+- [x] Before submitting, show where they'd land: "You'd be 3rd in line, about 20 minutes" (needs the estimate fix above)
+- [x] After submitting, a "Your spot" card: place in line, estimated wait, how many share the question, and a "joined late" note
+- [x] "Fixed it, thanks" button so a student can leave the line once their problem is solved
+- [x] "No office hours scheduled yet" / "No open office hours right now" when there's nothing to join
+- [ ] Session picker. The app currently picks automatically (the running session, else the next upcoming one); let students choose and send `office_hours_id`.
 
 ### Student: similar questions (buckets)
-- [ ] As the student types, show similar open questions from `GET /api/buckets/suggest?question=...&question_type=...` (wait until they pause typing before calling it)
-- [ ] After a category is picked, show open buckets in it from `GET /api/buckets?question_type=...`
-- [ ] Show each bucket's question and how many students are in it
-- [ ] "Same question" button → `POST /api/buckets/<id>/join`
-- [ ] Make clear that joining a bucket moves the whole group up
-- [ ] Point out that joining an existing bucket keeps its place in line, even after the session starts
+- [x] As the student types, show a similar open question from `GET /api/buckets/suggest` (waits until they pause typing)
+- [x] "Join the group" or "Keep mine separate" buttons → `POST /api/buckets/<id>/join`
+- [x] Shows how many classmates are waiting on it, and that joining keeps the group's place in line even after the session starts
+- [ ] Show more than one suggestion when several match (the backend returns up to 5)
 
 ### Student: queue view
-- [ ] Show the queue from `GET /api/queue` (position, category, question). Decide whether names are shown to other students.
-- [ ] Highlight the student's own ticket
-- [ ] Refresh automatically, e.g. every 5–10 seconds
-- [ ] Show the session's location, hours and `state` (upcoming / running) from `GET /api/office_hours`
-- [ ] Before the start, show "Office hours start at 2:00 PM. N questions queued so far."
-- [ ] Show a message when no session is upcoming or running
+- [x] "The line right now": each group's question, number of students and estimated minutes. Names aren't shown to other students.
+- [x] The student's own group is highlighted
+- [x] Refreshes automatically every 4 seconds
+- [x] Session status at the top: "ICS 32 starts Mon 2:00 PM", "is open" or "has ended", plus the location
+- [x] Message when nobody is waiting: "Nobody's waiting. Ask away and you'll be first."
+- [ ] Decide which place-in-line number to show. The screen counts **groups** (a group of 3 counts as one spot); the backend's `position` counts **students**.
 
 ### Professor: queue management
-- [ ] Queue list with priority, category, student count, and badges for "late", "pushed from last session" (`overflow_count` > 0) and "manually changed"
-- [ ] Show a divider between the main line and the late section (`in_late_section`)
-- [ ] Hide or disable the "down" button for questions in the late section
-- [ ] Group tickets in the same bucket together
-- [ ] "Done" button → `PATCH /api/queue/<id>` with `{status: "done"}`
-- [ ] Up/down bump buttons → `POST /api/queue/<id>/bump`
+- [x] Headline: "7 students, 4 conversations"
+- [x] "Next up" card for the top group: question, names, estimated minutes, and minutes saved by helping them together
+- [x] Groups shown together, with all the students' names
+- [x] Badges: "moved by you", "pushed from last session", "joined late"
+- [x] Divider before questions that joined after the session started (needs the `in_late_section` fix above)
+- [x] "Help" / "Help together" button marks the whole group done → `POST /api/buckets/<id>/resolve`
+- [x] Up/down buttons → `POST /api/queue/<id>/bump` (moves every student in the group)
+- [x] "Today so far": students helped, minutes left in the queue, minutes saved by grouping (the helped count is kept in that browser only)
+- [x] "What's coming up": bar chart of waiting questions by category
+- [ ] Show each student's own wording of the question inside a group (`members` from `GET /api/buckets`)
 - [ ] Edit a ticket's category or priority
-- [ ] Show each bucket's members (names and their wording of the question)
-- [ ] "Answered" button for a whole bucket → `POST /api/buckets/<id>/resolve`
 - [ ] Drag to pin a ticket to a spot (needs the backend pinning task)
 
 ### Professor: office hours
-- [ ] List sessions from `GET /api/office_hours`, with `state` and the number waiting in each
-- [ ] Form to create a session (course, location, start, end)
-- [ ] Edit a session's time or location → `PATCH /api/office_hours/<id>`
-- [ ] Open button (starts the session now; questions after that go to the back) and Close button. Hide Open on closed sessions.
-- [ ] After closing, show "N students moved to <next session>", or the warning when there is no next session
+- [x] Edit the current session's location and times → `PATCH /api/office_hours/<id>`
+- [x] "Open now" button (upcoming sessions) and "Wrap up" button (running sessions)
+- [x] After wrapping up, show "N students moved to the next session", or the warning when there is no next session
+- [x] Warning before wrapping up when no later session is scheduled
+- [x] "Schedule a new session" form (course, location, start, end), with a check that the end is after the start
+- [ ] List all sessions (today it only shows the current one), with `state` and the number waiting in each
 
 ### Professor: syllabus upload
 - [ ] File picker that uploads to the syllabus endpoint (needs the backend syllabus task)
 - [ ] Show the office hours found in the syllabus, with a button to confirm and create them
 
 ### Polish
-- [ ] Works at phone width (students will use phones)
-- [ ] Empty states: "No one in line", "No sessions scheduled"
-- [ ] Favicon and page title
+- [x] Phone-size layouts (adjusts below 900px and 480px wide)
+- [x] Empty states for the line, the professor queue and sessions
+- [x] Page title ("zot hours") and dark/light mode toggle
+- [ ] Replace the default Vite favicon
+- [ ] Test on a real phone
 
 ---
 
