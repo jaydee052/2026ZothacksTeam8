@@ -1,4 +1,5 @@
 import sqlite3
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from priority import score
@@ -23,7 +24,8 @@ def init_db():
             location TEXT NOT NULL,
             starts_at TEXT NOT NULL,
             ends_at TEXT NOT NULL,
-            is_open INTEGER NOT NULL DEFAULT 1
+            is_open INTEGER NOT NULL DEFAULT 1,
+            closed_at TEXT
         );
 
         CREATE TABLE IF NOT EXISTS buckets (
@@ -35,6 +37,7 @@ def init_db():
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             office_hours_id INTEGER,
             overflow_count INTEGER NOT NULL DEFAULT 0,
+            late INTEGER NOT NULL DEFAULT 0,
             FOREIGN KEY (office_hours_id) REFERENCES office_hours(id)
         );
 
@@ -51,6 +54,7 @@ def init_db():
             bucket_id INTEGER,
             overflow_count INTEGER NOT NULL DEFAULT 0,
             manually_changed INTEGER NOT NULL DEFAULT 0,
+            late INTEGER NOT NULL DEFAULT 0,
             FOREIGN KEY (office_hours_id) REFERENCES office_hours(id),
             FOREIGN KEY (bucket_id) REFERENCES buckets(id)
         );
@@ -70,19 +74,31 @@ def init_db():
         "class_section": "TEXT",
         "overflow_count": "INTEGER NOT NULL DEFAULT 0",
         "manually_changed": "INTEGER NOT NULL DEFAULT 0",
+        "late": "INTEGER NOT NULL DEFAULT 0",
     })
     _add_missing_columns(conn, "buckets", {
         "overflow_count": "INTEGER NOT NULL DEFAULT 0",
+        "late": "INTEGER NOT NULL DEFAULT 0",
+    })
+    _add_missing_columns(conn, "office_hours", {
+        "closed_at": "TEXT",
     })
 
     existing = conn.execute("SELECT COUNT(*) AS n FROM office_hours").fetchone()["n"]
     if existing == 0:
+        # Sample session starts an hour from now, so it's open for questions.
+        start = datetime.now().replace(second=0, microsecond=0) + timedelta(hours=1)
         conn.execute(
             """
             INSERT INTO office_hours (course, location, starts_at, ends_at, is_open)
-            VALUES (?, ?, ?, ?, 1)
+            VALUES (?, ?, ?, ?, 0)
             """,
-            ("ICS 32", "ICS 2nd Floor Atrium", "2026-10-17T14:00", "2026-10-17T16:00"),
+            (
+                "ICS 32",
+                "ICS 2nd Floor Atrium",
+                start.isoformat(timespec="minutes"),
+                (start + timedelta(hours=2)).isoformat(timespec="minutes"),
+            ),
         )
         oh_id = conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
         seed = [
@@ -119,14 +135,14 @@ def _add_missing_columns(conn, table, columns):
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
 
 
-def create_bucket(conn, title, question_type, office_hours_id):
+def create_bucket(conn, title, question_type, office_hours_id, late=False):
     """Start a new bucket from a student's question. Returns the new bucket id."""
     cursor = conn.execute(
         """
-        INSERT INTO buckets (title, question_type, priority, office_hours_id)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO buckets (title, question_type, priority, office_hours_id, late)
+        VALUES (?, ?, ?, ?, ?)
         """,
-        (title, question_type, score(question_type), office_hours_id),
+        (title, question_type, score(question_type, late=late), office_hours_id, int(late)),
     )
     return cursor.lastrowid
 
