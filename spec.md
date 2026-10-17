@@ -6,3 +6,21 @@ This is a priority queue application for students and professors to queue their 
 - Back end - Flask
 - Database - SQL Light
 
+# Features
+## Must-haves
+### Student end
+- Display the queue
+- Input box with type of questions
+- Logic for prioritizing queue
+- Upload syllabus to get office hour data
+
+### Professor end
+- Display the queue
+- Change timing and location of office hours
+- Push remaining people still waiting once office hours close to next time
+- Be able to change queue
+
+## Nice-to-have
+- Group similar questions
+- TA office hours
+- Bump to TA office hours if overflowing in professor office hours or at the beginning depending on question
