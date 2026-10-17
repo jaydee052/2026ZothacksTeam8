@@ -7,13 +7,14 @@ Use it in an endpoint like this:
         ...
         db.commit()
 """
+import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from sqlalchemy import create_engine, event, inspect, select, text
+from sqlalchemy import create_engine, event, func, inspect, select, text
 from sqlalchemy.orm import Session
 
-from models import Base, Bucket, OfficeHours, Ticket
+from models import Base, Bucket, OfficeHours, Student, Ticket
 from priority import score
 
 DB_PATH = Path(__file__).parent / "office_hours.db"
@@ -38,6 +39,14 @@ def get_engine():
 def get_db():
     """A database session. Use it in a `with` block so it always closes."""
     return Session(get_engine())
+
+
+def get_connection():
+    """sqlite3 connection for Anteater student/professor routes."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
 
 
 def init_db():
@@ -74,6 +83,11 @@ def init_db():
                 db, ticket.question, ticket.question_type, ticket.office_hours_id
             )
             ticket.bucket_id = bucket.id
+
+        # Hardcoded demo student (id 1). Classes are added through
+        # POST /api/students/1/sections, e.g. section code 34190 (COMPSCI 161).
+        if db.scalar(select(func.count()).select_from(Student)) == 0:
+            db.add(Student(name="Demo Student"))
 
         db.commit()
 

@@ -8,10 +8,12 @@ from routes import (
     buckets,
     categories,
     office_hours,
+    professors,
     queue,
     queue_leave,
     queue_pin,
     queue_ticket,
+    students,
     syllabus,
 )
 
@@ -32,6 +34,8 @@ app.register_blueprint(office_hours.bp)
 app.register_blueprint(syllabus.bp)
 app.register_blueprint(buckets.bp)
 app.register_blueprint(categories.bp)
+app.register_blueprint(students.bp)
+app.register_blueprint(professors.bp)
 
 
 @app.before_request

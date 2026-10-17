@@ -86,6 +86,10 @@ Base URL: `http://localhost:5001`. Every endpoint returns JSON. When something g
 | DELETE | `/api/office_hours/<id>` | — | `{deleted: id}`. 409 if anyone is waiting in it (close it instead). |
 | POST | `/api/office_hours/<id>/open` | — | Opened session. Starts it early if its start time hasn't come yet. 409 if already open or closed. |
 | POST | `/api/office_hours/<id>/close` | — | `{session, moved_to, moved_count, warning?}`. Waiting students move to the next session of the same course. 409 if already closed. |
+| POST | `/api/students/<id>/sections` | `{section_code}` (5 digits, e.g. `"34190"`) | The class (201), looked up on the Anteater API and saved to the student. 404 if no such section this term, 502 if Anteater is down. |
+| GET | `/api/students/<id>/sections` | — | The student's saved classes. The demo student is id `1`. |
+| POST | `/api/professors` | `{ucinetid}` (e.g. `"mikes"`) | Profile and `courses` (201), looked up on the Anteater API and saved. 404 if no such instructor, 502 if Anteater is down. |
+| GET | `/api/professors/<ucinetid>` | — | The saved profile and `courses`. 404 until the professor has signed in with `POST /api/professors`. |
 
 **Ticket fields:** `id`, `student_name`, `class_section`, `question`, `question_type`, `priority`, `status` (`waiting` / `done`), `bucket_id`, `student_count`, `overflow_count`, `manually_changed`, `late`, `in_late_section`, `pinned_position`, `office_hours_id`, `created_at`, `position`
 
@@ -104,6 +108,12 @@ Base URL: `http://localhost:5001`. Every endpoint returns JSON. When something g
 - Pinned students (`pinned_position`) are placed at their spot after everything else is sorted, overriding the score formula. When someone ahead of them is helped or leaves, they move up with the line. Students who join a pinned group are pinned with it.
 
 Times use the format `2026-10-17T14:00`.
+
+**Class fields** (from the Anteater API, term fixed in `backend/anteater.py`, currently Fall 2026): `section_code`, `section_type` (`Lec` / `Dis` / `Lab`), `section_num`, `course_id` (e.g. `COMPSCI161`), `department`, `course_number`, `course_title`, `instructors` (e.g. `["SHINDLER, M."]`), `meetings` (list of `{tba, days, start, end, location}`), `final_exam` (`{day, date, start, end, location}` or `null`), `enrolled`, `capacity`, `status`, `year`, `quarter`
+
+**Professor fields:** `ucinetid`, `name`, `title`, `email`, `department`, `year`, `quarter`, `courses` (list of `{course_id, department, course_number, course_title, sections}`, where `sections` holds every section of the course in the class shape above, including labs and discussions). Only courses the professor lectures are listed; independent study and research units are left out.
+
+Demo data: student `1` with section code `34190` (COMPSCI 161, SHINDLER, M.), professor `mikes` (COMPSCI 161 and COMPSCI 260P).
 
 ---
 
@@ -289,17 +299,18 @@ The backend's late rule changed after these screens were written. Late questions
 UCI's Anteater API provides course and section data. Check its documentation for the current endpoints before building. The work is to call it from our backend and expose the parts we need through our own API, so the frontend never calls Anteater directly.
 
 ### Research
-- [ ] Read the Anteater API docs. Find out the base URL, whether an API key is needed, and the rate limits.
-- [ ] Find the endpoints for course info (title, department) and current-quarter sections (section codes, lecture/discussion, instructors, times, locations)
+- [x] Read the Anteater API docs. Base URL `https://anteaterapi.com/v2/rest`, no key needed, 1000 requests an hour without one. Notes in [anteater-api.md](anteater-api.md).
+- [x] Find the endpoints for course info (title, department) and current-quarter sections (section codes, lecture/discussion, instructors, times, locations)
 - [ ] Save sample responses in `backend/anteater_samples/` for reference and offline testing
-- [ ] Note in this file which fields we use
+- [x] Note in this file which fields we use (see "Class fields" in the API reference)
 
 ### Client code
-- [ ] Add `requests` (or `httpx`) to `backend/requirements.txt`
-- [ ] Create `backend/anteater.py` with one function per lookup, e.g. `get_course("ICS 32")` and `get_sections("ICS 32", term)`
-- [ ] Turn Anteater responses into our own simple shapes so the rest of the code doesn't depend on theirs
-- [ ] Handle timeouts and errors. The app must keep working when Anteater is down.
-- [ ] Cache results, e.g. in an `anteater_cache` table or in memory with an expiry time, so we don't call Anteater on every request
+- [x] Create `backend/anteater.py`: `lookup_section(code)` and `lookup_instructor(ucinetid)`. Uses Python's built-in `urllib`, so no new packages.
+- [x] Turn Anteater responses into our own simple shapes so the rest of the code doesn't depend on theirs
+- [x] Handle timeouts and errors. The app must keep working when Anteater is down.
+- [x] Cache results in memory for an hour, and save students' and professors' classes in the database
+- [x] Students add classes by section code; professors sign in by UCInetID (`routes/students/`, `routes/professors/`)
+- [ ] Let a student remove a class
 
 ### Our endpoints (one file each in `backend/routes/classes/`)
 - [ ] `GET /api/classes/search?q=ICS 32`: course search for the frontend

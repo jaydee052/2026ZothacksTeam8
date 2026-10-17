@@ -6,7 +6,7 @@ office_hours.db files keep working. Times are stored as text like
 """
 from typing import Optional
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, text
+from sqlalchemy import Boolean, ForeignKey, Integer, String, UniqueConstraint, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -80,3 +80,54 @@ class Syllabus(Base):
     uploaded_at: Mapped[str] = mapped_column(
         String, nullable=False, server_default=text("CURRENT_TIMESTAMP")
     )
+
+
+class Student(Base):
+    """A student account. Classes are stored on student_sections."""
+
+    __tablename__ = "students"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class StudentSection(Base):
+    """A class a student added, looked up from the Anteater API."""
+
+    __tablename__ = "student_sections"
+    __table_args__ = (UniqueConstraint("student_id", "section_code", "year", "quarter"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    student_id: Mapped[int] = mapped_column(ForeignKey("students.id"), nullable=False)
+    section_code: Mapped[str] = mapped_column(String, nullable=False)
+    year: Mapped[str] = mapped_column(String, nullable=False)
+    quarter: Mapped[str] = mapped_column(String, nullable=False)
+    course_id: Mapped[str] = mapped_column(String, nullable=False)
+    data: Mapped[str] = mapped_column(String, nullable=False)
+    added_at: Mapped[str] = mapped_column(
+        String, nullable=False, server_default=text("CURRENT_TIMESTAMP")
+    )
+
+
+class Professor(Base):
+    __tablename__ = "professors"
+
+    ucinetid: Mapped[str] = mapped_column(String, primary_key=True)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    title: Mapped[Optional[str]] = mapped_column(String)
+    email: Mapped[Optional[str]] = mapped_column(String)
+    department: Mapped[Optional[str]] = mapped_column(String)
+
+
+class ProfessorCourse(Base):
+    """A course a professor lectures this term, with section data as JSON."""
+
+    __tablename__ = "professor_courses"
+    __table_args__ = (UniqueConstraint("ucinetid", "course_id", "year", "quarter"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ucinetid: Mapped[str] = mapped_column(ForeignKey("professors.ucinetid"), nullable=False)
+    course_id: Mapped[str] = mapped_column(String, nullable=False)
+    year: Mapped[str] = mapped_column(String, nullable=False)
+    quarter: Mapped[str] = mapped_column(String, nullable=False)
+    data: Mapped[str] = mapped_column(String, nullable=False)
