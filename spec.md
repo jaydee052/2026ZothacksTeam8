@@ -21,4 +21,5 @@ Professor end
 Nice-to-have
 - Group similar questions
 - TA office hours
-- 
+
+- bump to ta office hours if overflowing in professor office hours or at the beginning depending on question 
