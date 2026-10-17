@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+backend/office_hours.db
+backend/uploads/
+.venv/
+venv/

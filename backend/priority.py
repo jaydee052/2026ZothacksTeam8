@@ -1,6 +1,6 @@
 """Queue priority logic. See "Priority Formula" in spec.md.
 
-    Priority Score = Base Time + (Complex x 3) + (Students x 5) + Overflow
+    Priority Score = (Base Time + (Complex x 3) + (Students x 5)) x Overflow
 
 Higher scores are served first. (The spec lists this as an open question.)
 """
@@ -25,7 +25,7 @@ STUDENT_WEIGHT = 5
 
 
 def overflow_term(overflow_count):
-    """1 the first time a question is queued, doubled for each overflow."""
+    """1 the first time a question is queued, doubled for each day it overflowed."""
     return 2 ** max(overflow_count, 0)
 
 
@@ -35,5 +35,4 @@ def score(category, student_count=1, overflow_count=0):
         info["base_time"]
         + info["complexity"] * COMPLEXITY_WEIGHT
         + max(student_count, 1) * STUDENT_WEIGHT
-        + overflow_term(overflow_count)
-    )
+    ) * overflow_term(overflow_count)
