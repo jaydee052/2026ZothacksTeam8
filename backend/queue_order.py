@@ -5,9 +5,13 @@ The line has two sections:
      highest score first.
   2. Late section, at the back: questions submitted after the session started,
      in the order they arrived. Their score doesn't change their order.
+Then students the professor pinned are placed at their pinned spot, and everyone
+else fills in around them.
 
 Shared by the queue and bucket endpoints so they always agree on positions.
 """
+from collections import deque
+
 from sqlalchemy import func, select
 from sqlalchemy.orm import aliased
 
@@ -50,6 +54,28 @@ def serving_order(ticket):
     return (0, -ticket["priority"], ticket["created_at"], ticket["id"])
 
 
+def place_pinned(ordered):
+    """Put pinned students at their pinned spot (1 = first); everyone else keeps
+    their order around them. Pins past the end of the line go last. (Two students
+    pinned to the same spot shouldn't happen, since pinning makes room; if it does,
+    the lower ticket id goes first.)"""
+    pinned = deque(sorted(
+        (t for t in ordered if t["pinned_position"]),
+        key=lambda t: (t["pinned_position"], t["id"]),
+    ))
+    others = deque(t for t in ordered if not t["pinned_position"])
+    line = []
+    # Fill the line one spot at a time. A pinned student takes the spot once it
+    # reaches their pinned number; otherwise the next student in normal order does.
+    while pinned or others:
+        spot = len(line) + 1
+        if pinned and (pinned[0]["pinned_position"] <= spot or not others):
+            line.append(pinned.popleft())
+        else:
+            line.append(others.popleft())
+    return line
+
+
 def session_line(db, office_hours_id):
     """Waiting tickets in one session, in serving order, numbered from 1."""
     if office_hours_id is None:
@@ -59,7 +85,8 @@ def session_line(db, office_hours_id):
     rows = db.execute(
         select(Ticket, STUDENT_COUNT).where(Ticket.status == "waiting", in_session)
     ).all()
-    line = sorted((with_priority(ticket, count) for ticket, count in rows), key=serving_order)
+    ordered = sorted((with_priority(ticket, count) for ticket, count in rows), key=serving_order)
+    line = place_pinned(ordered)
     for number, ticket in enumerate(line, start=1):
         ticket["position"] = number
     return line

@@ -57,6 +57,7 @@ class Ticket(Base):
     question: Mapped[str] = mapped_column(String, nullable=False)
     question_type: Mapped[str] = mapped_column(String, nullable=False)
     priority: Mapped[int] = mapped_column(Integer, nullable=False)
+    # "waiting", "done" (helped) or "left" (left the line without being helped)
     status: Mapped[str] = mapped_column(String, nullable=False, default="waiting")
     created_at: Mapped[str] = mapped_column(
         String, nullable=False, server_default=text("CURRENT_TIMESTAMP")
@@ -66,6 +67,8 @@ class Ticket(Base):
     overflow_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     manually_changed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     late: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Set when the professor pins this student to a spot in line (1 = first).
+    pinned_position: Mapped[Optional[int]] = mapped_column(Integer)
 
 
 class Syllabus(Base):

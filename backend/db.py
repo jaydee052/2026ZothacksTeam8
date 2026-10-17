@@ -51,6 +51,7 @@ def init_db():
         "overflow_count": "INTEGER NOT NULL DEFAULT 0",
         "manually_changed": "INTEGER NOT NULL DEFAULT 0",
         "late": "INTEGER NOT NULL DEFAULT 0",
+        "pinned_position": "INTEGER",
     })
     _add_missing_columns(engine, "buckets", {
         "overflow_count": "INTEGER NOT NULL DEFAULT 0",

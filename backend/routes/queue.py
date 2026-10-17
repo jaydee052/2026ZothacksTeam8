@@ -1,14 +1,14 @@
 # Route blueprints for the office hours queue API.
 from flask import Blueprint, jsonify, request
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from bucket_rules import sync_bucket_status
 from db import create_bucket, get_db
-from models import OfficeHours, Ticket
+from models import Bucket, OfficeHours, Ticket
 from priority import score
 from queue_order import get_ticket, session_line
 from sessions import has_started, pick_session
-from validation import category_error, clean, question_error
+from validation import category_error, clean, question_error, status_error
 
 bp = Blueprint("queue", __name__, url_prefix="/api/queue")
 
@@ -106,6 +106,11 @@ def update_ticket(ticket_id):
         error = category_error(updates["question_type"])
         if error:
             return jsonify({"error": error}), 400
+    if "status" in updates:
+        updates["status"] = clean(updates["status"]).lower()
+        error = status_error(updates["status"])
+        if error:
+            return jsonify({"error": error}), 400
 
     # A professor setting the priority by hand overrides the formula.
     if "priority" in updates:
@@ -117,12 +122,41 @@ def update_ticket(ticket_id):
         ticket = db.get(Ticket, ticket_id)
         if ticket is None:
             return jsonify({"error": "ticket not found"}), 404
+
+        old_bucket_id = ticket.bucket_id
+        category_changed = (
+            "question_type" in updates and updates["question_type"] != ticket.question_type
+        )
         for key, value in updates.items():
             setattr(ticket, key, value)
-        db.flush()
-        # Close the student's bucket if they were the last one waiting in it
-        # (or reopen it if they were put back to waiting).
         if "status" in updates:
+            ticket.pinned_position = None  # a pin only means something while waiting
+        db.flush()
+
+        # A new category means a different kind of question than the rest of the
+        # group. If others share the group, this student gets a group of their own;
+        # if they're alone in it, the group's category changes with them.
+        if category_changed and old_bucket_id is not None:
+            others = db.scalar(
+                select(func.count(Ticket.id)).where(
+                    Ticket.bucket_id == old_bucket_id,
+                    Ticket.status == "waiting",
+                    Ticket.id != ticket.id,
+                )
+            )
+            if others:
+                bucket = create_bucket(
+                    db, ticket.question, ticket.question_type, ticket.office_hours_id, ticket.late
+                )
+                ticket.bucket_id = bucket.id
+            else:
+                db.get(Bucket, old_bucket_id).question_type = ticket.question_type
+            db.flush()
+
+        # Close a bucket once nobody in it is waiting, or reopen it if someone is
+        # back to waiting.
+        if "status" in updates or category_changed:
+            sync_bucket_status(db, old_bucket_id)
             sync_bucket_status(db, ticket.bucket_id)
         db.commit()
         return jsonify(get_ticket(db, ticket_id))
@@ -148,8 +182,10 @@ def bump_ticket(ticket_id):
 
         # Start from the priority currently shown, then mark it as manually changed.
         # A manually changed question is ranked in the main line, even if it was late.
+        # Bumping also removes a pin, since the professor is now moving it by score.
         ticket = db.get(Ticket, ticket_id)
         ticket.priority = shown["priority"] + delta
         ticket.manually_changed = True
+        ticket.pinned_position = None
         db.commit()
         return jsonify(get_ticket(db, ticket_id))

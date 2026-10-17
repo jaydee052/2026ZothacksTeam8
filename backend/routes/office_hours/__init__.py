@@ -7,6 +7,7 @@ bp = Blueprint("office_hours", __name__, url_prefix="/api/office_hours")
 from . import (  # noqa: E402,F401  (registers the routes)
     close_office_hours,
     create_office_hours,
+    delete_office_hours,
     list_office_hours,
     open_office_hours,
     update_office_hours,

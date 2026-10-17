@@ -68,19 +68,22 @@ Base URL: `http://localhost:5001`. Every endpoint returns JSON. When something g
 | GET | `/api/queue` | `?office_hours_id=` (optional) | Waiting tickets in serving order, each with `position`. Without the filter: every session's line, grouped by session start time. |
 | GET | `/api/queue/<id>` | — | One ticket with its current `position` (404 if not found) |
 | POST | `/api/queue` | `{student_name, class_section, question, question_type, office_hours_id?}` | New ticket (201). Without `office_hours_id`, it goes to the running session, or the next upcoming one. 409 if none. |
-| PATCH | `/api/queue/<id>` | any of `{status, priority, question_type, question, class_section}` | Updated ticket. Setting `priority` marks it `manually_changed`. |
+| PATCH | `/api/queue/<id>` | any of `{status, priority, question_type, question, class_section}` | Updated ticket. `status` must be `waiting`, `done` or `left`. Setting `priority` marks it `manually_changed`. Changing `question_type` of a student in a shared group gives them their own group. |
+| POST | `/api/queue/<id>/leave` | — | Ticket with `status: "left"`. 409 if not waiting. |
+| POST | `/api/queue/<id>/pin` | `{position: 2}` or `{position: null}` to unpin | Updated ticket. Keeps the student at that spot (1 = first); the latest pin wins and shifts anyone pinned there down one. |
 | POST | `/api/queue/<id>/bump` | `{direction: "up" or "down"}` | Updated ticket (moves 15 points, marks it `manually_changed`). 409 when bumping a late-section question down. |
 | GET | `/api/buckets` | `?question_type=` `?status=` | Buckets in line order, with `member_count`, `priority`, `in_late_section` and `members` (each student's `ticket_id`, `student_name`, `class_section`, `question`, `status`) |
 | GET | `/api/buckets/suggest` | `?question=` (required) `?question_type=` `?office_hours_id=` | Up to 5 open buckets with a similar question, each with `similarity` (0.5–1), most similar first. Empty list if nothing matches. |
 | POST | `/api/buckets/<id>/resolve` | — | `{bucket, resolved_count}`. Marks the bucket and everyone waiting in it done. 409 if already done. |
 | POST | `/api/buckets/<id>/join` | `{student_name, class_section, question?}` | New ticket (201). The student takes the bucket's place in line, even if they join late. |
-| GET | `/api/office_hours` | `?course=` `?is_open=true/false` | Sessions with `waiting_count` and `state` (`upcoming` / `running` / `closed`) |
-| POST | `/api/office_hours` | `{course, location, starts_at, ends_at}` | New session (201). Takes questions right away; `state` is `upcoming` until it starts. |
-| PATCH | `/api/office_hours/<id>` | any of the above fields | Updated session |
+| GET | `/api/office_hours` | `?course=` `?is_open=true/false` `?state=upcoming/running/closed` | Sessions with `waiting_count` and `state` (`upcoming` / `running` / `closed`) |
+| POST | `/api/office_hours` | `{course, location, starts_at, ends_at}` | New session (201), with `moved_in_count` (students it picked up from an earlier closed session). Takes questions right away; `state` is `upcoming` until it starts. 409 if it overlaps another session of the same course. |
+| PATCH | `/api/office_hours/<id>` | any of the above fields | Updated session. 409 if closed, if it would overlap another session, or if changing the start time after the session started. |
+| DELETE | `/api/office_hours/<id>` | — | `{deleted: id}`. 409 if anyone is waiting in it (close it instead). |
 | POST | `/api/office_hours/<id>/open` | — | Opened session. Starts it early if its start time hasn't come yet. 409 if already open or closed. |
 | POST | `/api/office_hours/<id>/close` | — | `{session, moved_to, moved_count, warning?}`. Waiting students move to the next session of the same course. 409 if already closed. |
 
-**Ticket fields:** `id`, `student_name`, `class_section`, `question`, `question_type`, `priority`, `status` (`waiting` / `done`), `bucket_id`, `student_count`, `overflow_count`, `manually_changed`, `late`, `in_late_section`, `office_hours_id`, `created_at`, `position`
+**Ticket fields:** `id`, `student_name`, `class_section`, `question`, `question_type`, `priority`, `status` (`waiting` / `done`), `bucket_id`, `student_count`, `overflow_count`, `manually_changed`, `late`, `in_late_section`, `pinned_position`, `office_hours_id`, `created_at`, `position`
 
 `position` is the ticket's place in its own session's line, starting at 1, or `null` once it's no longer waiting. Joining the queue or a bucket returns it right away, so the student can see "you are #N".
 
@@ -91,7 +94,10 @@ Base URL: `http://localhost:5001`. Every endpoint returns JSON. When something g
 - The line has two sections. The main line holds on-time questions, ranked by `(Base Time + Complex × 3 + Students × 5) × Overflow`.
 - Questions submitted after the start have `late: true` and `in_late_section: true`. They go to the back, in the order they arrived. Their `priority` is still their real score, but it doesn't change their order.
 - Bumping a late question up moves it into the main line (`in_late_section` becomes false). Bumping it down returns 409.
-- When a session closes, waiting students move to the next session, are no longer late, and have their score doubled.
+- When a session closes, waiting students move to the next session, are no longer late, and have their score doubled. Pins are cleared.
+- Sessions close on their own 30 minutes after their end time.
+- If there's no next session when one closes, its waiting students stay put and move into the next session as soon as one is scheduled.
+- Pinned students (`pinned_position`) are placed at their spot after everything else is sorted.
 
 Times use the format `2026-10-17T14:00`.
 
@@ -167,7 +173,8 @@ The backend's late rule changed after these screens were written. Late questions
 - [x] "What's coming up": bar chart of waiting questions by category
 - [ ] Show each student's own wording of the question inside a group (`members` from `GET /api/buckets`)
 - [ ] Edit a ticket's category or priority
-- [ ] Drag to pin a ticket to a spot (needs the backend pinning task)
+- [ ] Pin a group to a spot → `POST /api/queue/<id>/pin` (backend ready), and show a "pinned" badge
+- [ ] "Leave the line" button for students → `POST /api/queue/<id>/leave` (today "Fixed it, thanks" marks them done instead)
 
 ### Professor: office hours
 - [x] Edit the current session's location and times → `PATCH /api/office_hours/<id>`
@@ -176,6 +183,9 @@ The backend's late rule changed after these screens were written. Late questions
 - [x] Warning before wrapping up when no later session is scheduled
 - [x] "Schedule a new session" form (course, location, start, end), with a check that the end is after the start
 - [ ] List all sessions (today it only shows the current one), with `state` and the number waiting in each
+- [ ] Delete button for empty sessions → `DELETE /api/office_hours/<id>`
+- [ ] Show the overlap / "start time is locked" errors next to the session form, and lock the Starts field once a session is running
+- [ ] After scheduling a session, show "N waiting students moved in" when `moved_in_count` > 0
 
 ### Professor: syllabus upload
 - [ ] File picker that uploads to the syllabus endpoint (needs the backend syllabus task)
@@ -214,10 +224,10 @@ The backend's late rule changed after these screens were written. Late questions
 - [x] Filter `GET /api/queue` to one session (`?office_hours_id=`)
 - [x] Return each ticket's position number for the student "you are #N" display (`queue_order.py`)
 - [x] `GET /api/queue/<id>` so a student can check their own ticket (`routes/queue_ticket.py`)
-- [ ] Let a student leave the queue (`status: "left"`)
-- [ ] Only allow known `status` values (`waiting`, `done`, `left`)
-- [ ] Pinning (spec "Manual Changing"): store a `pinned_position` and keep pinned tickets at that spot when sorting
-- [ ] Decide whether `question_type` changes on a ticket in a bucket should move it out of the bucket
+- [x] Let a student leave the queue: `POST /api/queue/<id>/leave` sets `status: "left"` (`routes/queue_leave.py`)
+- [x] Only allow known `status` values (`waiting`, `done`, `left`)
+- [x] Pinning (spec "Manual Changing"): `POST /api/queue/<id>/pin` keeps a student at a spot while everyone else moves around them; the latest pin wins (`routes/queue_pin.py`, `queue_order.py`)
+- [x] Category changes inside a group: if others share the group, the student moves to a group of their own; if they're alone, the group's category changes with them
 
 ### Buckets
 - [x] `POST /api/buckets/<id>/resolve`: mark the bucket and all its tickets done (`routes/buckets/resolve_bucket.py`)
@@ -227,12 +237,12 @@ The backend's late rule changed after these screens were written. Late questions
 - [ ] Tune similar-question matching with real student questions (cutoff and filler words are in `similarity.py`)
 
 ### Office hours
-- [ ] Move students stranded on a closed session once a later session is scheduled
-- [ ] `DELETE /api/office_hours/<id>` (only if nobody is waiting)
-- [ ] Stop two sessions of the same course from overlapping
-- [ ] Filter `GET /api/office_hours` by `?state=upcoming` / `running` / `closed`
-- [ ] Decide what happens when a session's start time is edited after questions came in (currently each question keeps its late / on-time mark)
-- [ ] Optional: close sessions automatically at their end time (they already count as started at their start time)
+- [x] Students stranded on a closed session move into the next session once one is scheduled (`overflow.py`)
+- [x] `DELETE /api/office_hours/<id>`, only if nobody is waiting (`routes/office_hours/delete_office_hours.py`)
+- [x] Two open or upcoming sessions of the same course can't overlap (closed ones don't count, so a make-up session can reuse the slot)
+- [x] Filter `GET /api/office_hours` by `?state=upcoming` / `running` / `closed`
+- [x] Start time is locked once a session has started (students already chose on time vs. late based on it); the end time can still change. Closed sessions can't be edited.
+- [x] Sessions close automatically 30 minutes after their end time, moving waiting students on like a normal close (`AUTO_CLOSE_AFTER` in `overflow.py`)
 
 ### Syllabus upload (`routes/syllabus.py` is a placeholder)
 - [ ] `POST /api/syllabus`: accept a PDF upload and save it to `backend/uploads/`

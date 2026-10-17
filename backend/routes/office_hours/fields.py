@@ -1,4 +1,7 @@
 """Shared checks for office hours details (used by create and update)."""
+from sqlalchemy import select
+
+from models import OfficeHours
 from sessions import has_started, is_closed
 from validation import clean, parse_time
 
@@ -40,6 +43,35 @@ def read_fields(data, current=None):
     return fields, None
 
 
+def overlap_error(db, course, starts_at, ends_at, exclude_id=None):
+    """Error message if another open or upcoming session of the same course
+    overlaps this time, or None. Closed sessions don't count, so a professor who
+    ended early can schedule a make-up in the same slot."""
+    query = select(OfficeHours).where(
+        OfficeHours.course == course,
+        OfficeHours.closed_at.is_(None),
+        OfficeHours.starts_at < ends_at,
+        OfficeHours.ends_at > starts_at,
+    )
+    if exclude_id is not None:
+        query = query.where(OfficeHours.id != exclude_id)
+    clash = db.scalar(query.order_by(OfficeHours.starts_at).limit(1))
+    if clash is None:
+        return None
+    return (
+        f"overlaps another {course} session ({clash.starts_at} to {clash.ends_at}, "
+        f"{clash.location})"
+    )
+
+
+def session_state(session):
+    if is_closed(session):
+        return "closed"
+    if has_started(session):
+        return "running"
+    return "upcoming"
+
+
 def session_to_dict(session):
     """A session (models.OfficeHours) as JSON, with a state the frontend can show.
 
@@ -48,10 +80,5 @@ def session_to_dict(session):
     if session is None:
         return None
     data = session.to_dict()
-    if is_closed(session):
-        data["state"] = "closed"
-    elif has_started(session):
-        data["state"] = "running"
-    else:
-        data["state"] = "upcoming"
+    data["state"] = session_state(session)
     return data

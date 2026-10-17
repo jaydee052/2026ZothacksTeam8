@@ -3,6 +3,7 @@
 Query params (all optional):
   course   only this course, e.g. "ICS 32"
   is_open  "true" for open sessions only, "false" for closed only
+  state    "upcoming", "running" or "closed"
 """
 from flask import jsonify, request
 from sqlalchemy import and_, func, select
@@ -34,10 +35,16 @@ def list_office_hours():
     if is_open in ("true", "false"):
         query = query.where(OfficeHours.is_open.is_(is_open == "true"))
 
+    state = (request.args.get("state") or "").strip().lower()
+    if state and state not in ("upcoming", "running", "closed"):
+        return jsonify({"error": "state must be one of: upcoming, running, closed"}), 400
+
     with get_db() as db:
         sessions = []
         for session, waiting_count in db.execute(query).all():
             data = session_to_dict(session)
+            if state and data["state"] != state:
+                continue
             data["waiting_count"] = waiting_count
             sessions.append(data)
     return jsonify(sessions)

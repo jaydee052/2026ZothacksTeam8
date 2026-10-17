@@ -89,6 +89,10 @@ feature details are in [spec.md](spec.md).
         "You are #3 in line"
         (can check again any time; the number updates as
          people are helped, join groups, or get moved)
+                 |
+                 v
+        Can leave the line any time ("left"), e.g. if they
+        figured it out or have to go
 ```
 
 ---
@@ -116,14 +120,23 @@ feature details are in [spec.md](spec.md).
             |        moving a late question up puts it in the main line,
             |        moving it down does nothing since it's already last)
             |
+            +--> PIN someone to a spot, e.g. "#2"
+            |       (they stay there while everyone else moves around them;
+            |        pinning a spot that's taken moves that person down one)
+            |
             v
-   4. CLOSE the session
+   4. CLOSE the session (or it closes by itself 30 minutes after its end time)
             |
             +--> Anyone still waiting moves to the NEXT session
                  for the same course, with their score DOUBLED
                  so they're near the front next time.
-                 (If there's no next session, they stay waiting
-                  and the professor sees a warning.)
+                 (If there's no next session yet, they wait, and move in
+                  automatically as soon as one is scheduled.)
+
+   Rules for sessions:
+     - Two sessions of the same course can't overlap.
+     - The start time is locked once a session starts (the end time isn't).
+     - A session can be deleted only if nobody is waiting in it.
 ```
 
 ---
@@ -132,12 +145,12 @@ feature details are in [spec.md](spec.md).
 
 ```
    UPCOMING  ------------------>  RUNNING  ------------------>  CLOSED
-   (taking questions;             (questions still accepted,    (can't join or
-    everyone counts as             but new ones go to the        reopen; leftover
+   (taking questions;             (questions still accepted,    (can't join, edit
+    everyone counts as             but new ones go to the        or reopen; leftover
     on time)                       back of the line)             students moved on)
 
-             professor presses OPEN,          professor presses CLOSE
-             or the start time arrives
+             professor presses OPEN,          professor presses CLOSE,
+             or the start time arrives        or 30 min after the end time
 ```
 
 ---
@@ -173,6 +186,9 @@ of anyone in the late section.
 
 Higher score = helped sooner. Ties go to whoever asked first.
 
+After that, anyone the professor **pinned** is placed at their pinned spot, and
+everyone else fills in around them.
+
 When a session closes, everyone still waiting moves to the next session. They
 count as on time there (they were waiting before it started), and their score
 doubles.
@@ -202,7 +218,8 @@ backend/
   models.py               what's stored: sessions, groups, tickets
   db.py                   opens the database, adds sample data
   priority.py             the score formula and question categories
-  queue_order.py          sorts the line and numbers each spot (#1, #2...)
+  queue_order.py          sorts the line, places pinned students, numbers each spot (#1, #2...)
+  overflow.py             moving waiting students on: closing, auto-closing, stranded students
   sessions.py             upcoming / running / closed, and which session a question joins
   similarity.py           decides if two questions are "the same question"
   bucket_rules.py         closes a group when nobody in it is waiting
@@ -211,9 +228,11 @@ backend/
   routes/                 the requests the screens can make
     queue.py              join the line, list the line, mark done, move up/down
     queue_ticket.py       "where am I in line?"
+    queue_leave.py        leave the line
+    queue_pin.py          professor pins a student to a spot
     categories.py         the list of question types
     buckets/              groups: list, join, suggest similar, mark answered
-    office_hours/         sessions: list, schedule, edit, open, close
+    office_hours/         sessions: list, schedule, edit, open, close, delete
     syllabus.py           (empty, not built yet)
 
 frontend/                 React app (still the starter page)
