@@ -12,18 +12,23 @@ const when = (t) => new Date(t).toLocaleString([], { weekday: 'short', hour: 'nu
 const words = (s) => s.toLowerCase().match(/[a-z]{4,}/g) || []
 
 // Tickets sharing a bucket are one "conversation".
+// The queue already arrives in serving order (main line by score, then the late section
+// by arrival), so groups keep that order: each group sits where its first student is.
+// Don't re-sort by score here, or late questions with high scores would jump ahead.
 function groupUp(queue, cats) {
   const map = new Map()
   queue.forEach((t) => {
     const g = map.get(t.bucket_id) || { id: t.bucket_id, tickets: [], priority: 0 }
     g.tickets.push(t); g.priority = Math.max(g.priority, t.priority); map.set(t.bucket_id, g)
   })
-  return [...map.values()].sort((a, b) => b.priority - a.priority).map((g) => {
+  return [...map.values()].map((g) => {
     const times = g.tickets.map((t) => cats[t.question_type]?.base_time ?? 3)
     return { ...g, title: g.tickets[0].question, mins: Math.max(...times), solo: times.reduce((a, b) => a + b, 0) }
   })
 }
-const isLate = (g) => g.tickets.every((t) => t.late)
+// In the late section at the back: joined after the session started, and not moved up
+// by the professor.
+const isLate = (g) => g.tickets.every((t) => t.in_late_section)
 
 function useQueue() {
   const [state, setState] = useState({ queue: [], cats: api.CATS, hours: null, live: false, ready: false })
@@ -137,11 +142,14 @@ function Student({ queue, groups, cats, hours, act, live, ready }) {
   const myGroupIdx = groups.findIndex((g) => g.tickets.some(isMine))
   const pos = myGroupIdx + 1
   const wait = myGroupIdx < 0 ? 0 : groups.slice(0, myGroupIdx + 1).reduce((a, g) => a + g.mins, 0)
-  const lateMine = myTickets.some((t) => t.late)
-  // Where a brand-new question would land: late questions go last, on-time ones are ranked by score.
+  const lateMine = myTickets.length > 0 && myTickets.every((t) => t.in_late_section)
+  // Where a brand-new question would land. Once the session is running it goes behind
+  // everyone already waiting; before that, it's ranked by score among on-time questions.
   const c = cats[type]
-  const newPriority = running ? 0 : c ? c.base_time + c.complexity * 3 + 5 : 10
-  const nextSpot = groups.filter((g) => g.priority >= newPriority).length + 1
+  const newPriority = c ? c.base_time + c.complexity * 3 + 5 : 10
+  const nextSpot = running
+    ? groups.length + 1
+    : groups.filter((g) => !isLate(g) && g.priority >= newPriority).length + 1
   const nextWait = groups.slice(0, nextSpot - 1).reduce((a, g) => a + g.mins, 0) + (c?.base_time ?? 5)
 
   const submit = (bucket_id) => {
@@ -291,7 +299,8 @@ function Professor({ groups, queue, cats, hours, act, live, ready }) {
                   </div>
                   <div className="btns">
                     <button className="icon" aria-label="Move up" onClick={() => move(g, 'up')}>↑</button>
-                    <button className="icon" aria-label="Move down" onClick={() => move(g, 'down')}>↓</button>
+                    {/* Late questions are already at the back, so there's nowhere further down. */}
+                    {!isLate(g) && <button className="icon" aria-label="Move down" onClick={() => move(g, 'down')}>↓</button>}
                     <button className="btn outline" onClick={() => finish(g)}>{g.tickets.length > 1 ? 'Help together' : 'Help'}</button>
                   </div>
                 </li>

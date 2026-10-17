@@ -4,3 +4,4 @@ backend/office_hours.db
 backend/uploads/
 .venv/
 venv/
+.DS_Store

@@ -113,12 +113,12 @@ The app is called **zot hours**. It has a Student view and a Professor view, swi
 
 ### Fixes needed to match the latest backend
 The backend's late rule changed after these screens were written. Late questions now keep their real score and sit in a separate late section, instead of scoring 0.
-- [ ] **Line order:** `groupUp` in `App.jsx` re-sorts groups by score, so a late question with a high score (e.g. Research, 35) would show above on-time questions. Keep the order the backend sends (or sort by `in_late_section` first).
-- [ ] **Late divider and badge:** use `in_late_section` instead of `late`. A late question the professor moved up has `late: true` but is back in the main line.
-- [ ] **Down button:** hide it for groups in the late section. The backend refuses those (409) and the professor would see an error.
-- [ ] **"You'd be Nth in line" estimate:** it treats a new question as score 0 once the session is running. Use "behind everyone already waiting" instead.
-- [ ] **Demo mode:** `score()` in `api.js` still returns 0 for late questions. Update it to match the backend: real score, late section ordered by arrival.
-- [ ] Remove the committed `.DS_Store` files and add `.DS_Store` to `.gitignore`
+- [x] **Line order:** `groupUp` in `App.jsx` re-sorts groups by score, so a late question with a high score (e.g. Research, 35) would show above on-time questions. Keep the order the backend sends (or sort by `in_late_section` first).
+- [x] **Late divider:** uses `in_late_section` instead of `late`. A late question the professor moved up has `late: true` but is back in the main line. (The "joined late" badge still uses `late`, since that's still true.)
+- [x] **Down button:** hide it for groups in the late section. The backend refuses those (409) and the professor would see an error.
+- [x] **"You'd be Nth in line" estimate:** it treats a new question as score 0 once the session is running. Use "behind everyone already waiting" instead.
+- [x] **Demo mode:** `score()` in `api.js` still returns 0 for late questions. Update it to match the backend: real score, late section ordered by arrival.
+- [x] Remove the committed `.DS_Store` files and add `.DS_Store` to `.gitignore`
 
 ### Setup
 - [x] Replace the Vite starter page in `frontend/src/App.jsx`
@@ -135,7 +135,7 @@ The backend's late rule changed after these screens were written. Late questions
 - [x] Live word counter ("12/25 words"); can't submit past 25
 - [x] Warn before submitting to a running session: "This session has started. Your question will go to the back of the line."
 - [x] Show the API's error message if a submission is rejected
-- [x] Before submitting, show where they'd land: "You'd be 3rd in line, about 20 minutes" (needs the estimate fix above)
+- [x] Before submitting, show where they'd land: "You'd be 3rd in line, about 20 minutes"
 - [x] After submitting, a "Your spot" card: place in line, estimated wait, how many share the question, and a "joined late" note
 - [x] "Fixed it, thanks" button so a student can leave the line once their problem is solved
 - [x] "No office hours scheduled yet" / "No open office hours right now" when there's nothing to join
@@ -160,7 +160,7 @@ The backend's late rule changed after these screens were written. Late questions
 - [x] "Next up" card for the top group: question, names, estimated minutes, and minutes saved by helping them together
 - [x] Groups shown together, with all the students' names
 - [x] Badges: "moved by you", "pushed from last session", "joined late"
-- [x] Divider before questions that joined after the session started (needs the `in_late_section` fix above)
+- [x] Divider before the late section, and no down arrow on late-section groups
 - [x] "Help" / "Help together" button marks the whole group done → `POST /api/buckets/<id>/resolve`
 - [x] Up/down buttons → `POST /api/queue/<id>/bump` (moves every student in the group)
 - [x] "Today so far": students helped, minutes left in the queue, minutes saved by grouping (the helped count is kept in that browser only)

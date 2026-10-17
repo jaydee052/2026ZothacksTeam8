@@ -11,9 +11,9 @@ export const CATS = {
   personal: { label: 'Personal', base_time: 10, complexity: 3 },
 }
 // Same formula as priority.py: (base + complexity*3 + students*5) * 2^overflow
-// Late questions (sent after the session started) score 0 and sit behind everyone on time.
-export const score = (t, n = 1, o = 0, late = false) => {
-  if (late) return 0
+// Lateness isn't part of the score. Late questions keep their real score but wait in
+// a separate late section at the back, in the order they arrived (see serveOrder).
+export const score = (t, n = 1, o = 0) => {
   const c = CATS[t] || CATS.quick_qa
   return (c.base_time + c.complexity * 3 + Math.max(n, 1) * 5) * 2 ** Math.max(o, 0)
 }
@@ -60,13 +60,22 @@ const seed = () => {
 }
 const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || seed() } catch { return seed() } }
 const save = (s) => localStorage.setItem(KEY, JSON.stringify(s))
+// Same order as the backend (queue_order.py): the main line by score, then the late
+// section by arrival. A late question the professor moved up is back in the main line.
+const serveOrder = (a, b) =>
+  (a.in_late_section - b.in_late_section) ||
+  (a.in_late_section ? 0 : b.priority - a.priority) ||
+  a.created_at.localeCompare(b.created_at) || a.id - b.id
 const decorate = (tickets) => {
   const waiting = tickets.filter((t) => t.status === 'waiting')
   return waiting.map((t) => {
     const n = waiting.filter((m) => m.bucket_id === t.bucket_id).length
-    return { ...t, student_count: n, priority: t.manually_changed ? t.priority : score(t.question_type, n, t.overflow_count, t.late) }
-  }).sort((a, b) => b.priority - a.priority || a.created_at.localeCompare(b.created_at))
-    .map((t, i) => ({ ...t, position: i + 1 }))
+    return {
+      ...t, student_count: n,
+      in_late_section: !!t.late && !t.manually_changed,
+      priority: t.manually_changed ? t.priority : score(t.question_type, n, t.overflow_count),
+    }
+  }).sort(serveOrder).map((t, i) => ({ ...t, position: i + 1 }))
 }
 
 export async function probe() {
@@ -137,6 +146,9 @@ export async function bump(id, direction) {
   if (live) return http(`/queue/${id}/bump`, { method: 'POST', body: { direction } })
   const s = load(), t = decorate(s.tickets).find((x) => x.id === id)
   const raw = s.tickets.find((x) => x.id === id)
+  // Same rule as the backend: a late question can be moved up into the main line,
+  // but not down, since it's already at the back.
+  if (t?.in_late_section && direction === 'down') throw new Error('this question is already in the late section at the back of the line')
   if (t && raw) { raw.priority = t.priority + (direction === 'up' ? 15 : -15); raw.manually_changed = true }
   save(s)
 }
@@ -172,9 +184,14 @@ export async function saveHours(patch) {
 export async function wrapUp() {
   if (!live) {
     const s = load()
-    s.tickets.forEach((t) => { if (t.status === 'waiting') t.overflow_count += 1 })
-    s.hours.is_open = false; s.hours.closed_at = local(new Date())
-    s.tickets.forEach((t) => { if (t.status === 'waiting') t.late = false }); save(s)
+    // Same as the backend: waiting students count as on time for the next session and
+    // get the x2 boost. Professor-set scores skip the formula, so double them directly.
+    s.tickets.forEach((t) => {
+      if (t.status !== 'waiting') return
+      t.overflow_count += 1; t.late = false
+      if (t.manually_changed) t.priority *= 2
+    })
+    s.hours.is_open = false; s.hours.closed_at = local(new Date()); save(s)
     return 'Wrapped up. Waiting students keep their spot with a boost.'
   }
   const r = await http(`/office_hours/${hoursId}/close`, { method: 'POST' })
