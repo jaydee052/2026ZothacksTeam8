@@ -1,6 +1,6 @@
 import { Fragment, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import * as api from './api.js'
-import { CURRENT_STUDENT } from './config.js'
+import { CURRENT_PROFESSOR, CURRENT_STUDENT } from './config.js'
 
 const ls = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d } catch { return d } }
 const useStored = (k, d) => {
@@ -10,15 +10,20 @@ const useStored = (k, d) => {
 }
 const ordinal = (n) => n + (['th', 'st', 'nd', 'rd'][(n % 100 >> 3) ^ 1 && n % 10 < 4 ? n % 10 : 0] || 'th')
 const when = (t) => new Date(t).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })
-// "6:05 PM" today, "Sat 6:05 PM" on another day. t is local time like "2026-10-18T18:05".
-const turnTime = (t) => {
-  const d = new Date(t)
-  return d.toDateString() === new Date().toDateString()
-    ? d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-    : when(t)
-}
 const words = (s) => s.toLowerCase().match(/[a-z]{4,}/g) || []
 const PALETTE = 6 // class colors cc-0 .. cc-5 in App.css
+const to12 = (hhmm) => {
+  if (!hhmm) return ''
+  const [h, m] = hhmm.split(':').map(Number)
+  return `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')}${h < 12 ? 'am' : 'pm'}`
+}
+// "MWF · 10:00am–10:50am · DBH 1100" for a section that came from Anteater.
+const meetingText = (s) => {
+  const m = (s.meetings || []).find((x) => !x.tba)
+  if (!m) return 'Time TBA'
+  return [m.days, `${to12(m.start)}–${to12(m.end)}`, m.location].filter(Boolean).join(' · ')
+}
+const sectionName = (s) => `${s.section_type} ${s.section_num}` // "Lec A", "Dis 1"
 
 // Tickets sharing a bucket are one "conversation".
 function groupUp(queue, cats) {
@@ -31,7 +36,7 @@ function groupUp(queue, cats) {
   // by arrival), so groups keep that order. Don't re-sort by score here.
   return [...map.values()].map((g) => {
     const times = g.tickets.map((t) => cats[t.question_type]?.base_time ?? 3)
-    return { ...g, title: g.tickets[0].question, mins: Math.max(...times), solo: times.reduce((a, b) => a + b, 0) }
+    return { ...g, title: g.tickets[0].question, type: g.tickets[0].question_type, mins: Math.max(...times), solo: times.reduce((a, b) => a + b, 0) }
   })
 }
 // In the late section at the back: joined after the session started, and not moved up.
@@ -62,12 +67,36 @@ function Names({ tickets }) {
   )
 }
 
+// Anteater data (classes, professor courses). Kept in localStorage so a reload still
+// shows the last answer while the backend is starting; retries until it gets one.
+function useLoaded(key, load) {
+  const [data, setData] = useStored(key, null)
+  const [error, setError] = useState(null)
+  const loadRef = useRef(load)
+  loadRef.current = load
+  useEffect(() => {
+    let dead = false, timer
+    const go = async () => {
+      try { const d = await loadRef.current(); if (!dead) { setData(d); setError(null) } } catch (e) {
+        if (!dead) { setError(e.message); timer = setTimeout(go, 5000) }
+      }
+    }
+    go()
+    return () => { dead = true; clearTimeout(timer) }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  return [data, error]
+}
+
+// Keeps the line for ONE course in step with the backend. With no course (the dashboards)
+// it still tracks every session, so the cards can show who is waiting.
 function useQueue(course) {
   const [state, setState] = useState({ queue: [], cats: api.CATS, hours: null, sessions: [], live: false, ready: false })
   const tick = useRef(0)
+  const seq = useRef(0)
   const courseRef = useRef(course)
   courseRef.current = course
   const refresh = useCallback(async () => {
+    const mine = ++seq.current
     try {
       // Backend started after the page loaded? Look for it every few refreshes.
       if (!api.isLive() && tick.current++ % 3 === 0 && await api.probe()) {
@@ -77,7 +106,8 @@ function useQueue(course) {
       const sessions = await api.getSessions()
       const hours = api.pickHours(sessions, course)
       const queue = await api.getQueue(hours?.id) // only the session being shown
-      if (courseRef.current !== course) return // the page moved to another class meanwhile
+      // The page moved to another class, or a newer refresh started meanwhile: its answer wins.
+      if (courseRef.current !== course || mine !== seq.current) return
       setState((s) => ({ ...s, queue, hours, sessions, live: api.isLive(), ready: true }))
     } catch { /* keep last data */ }
   }, [course])
@@ -87,9 +117,19 @@ function useQueue(course) {
     api.probe().then(async () => {
       const cats = await api.getCategories()
       if (dead) return
-      setState((s) => ({ ...s, cats })); refresh(); id = setInterval(refresh, 4000)
+      setState((s) => ({ ...s, cats })); refresh(); id = setInterval(refresh, 2500)
     })
-    return () => { dead = true; clearInterval(id) }
+    // Catch up straight away when the tab comes back, or another tab changed the demo data.
+    const wake = () => { if (document.visibilityState === 'visible') refresh() }
+    document.addEventListener('visibilitychange', wake)
+    window.addEventListener('focus', wake)
+    window.addEventListener('storage', refresh)
+    return () => {
+      dead = true; clearInterval(id)
+      document.removeEventListener('visibilitychange', wake)
+      window.removeEventListener('focus', wake)
+      window.removeEventListener('storage', refresh)
+    }
   }, [refresh])
   return [state, refresh]
 }
@@ -97,22 +137,30 @@ function useQueue(course) {
 export default function App() {
   const [theme, setTheme] = useStored('zh.theme', 'dark')
   const [role, setRole] = useStored('zh.role', 'student')
-  const [view, setView] = useState('class') // student pages: class | classes | add | profile
+  const [view, setView] = useState('home') // student: home | class | profile.  professor: home | course
   const [toast, setToast] = useState(null)
-  // The student comes from config.js. Name and section can be edited on the profile page.
-  const [me, setMe] = useStored('zh.profile', { name: CURRENT_STUDENT.name, section: CURRENT_STUDENT.section })
-  const [classes, setClasses] = useStored('zh.classes', CURRENT_STUDENT.classes)
-  const [lastClass, setLastClass] = useStored('zh.class', CURRENT_STUDENT.classes[0] ?? null)
+  const topRef = useRef(null)
+  const [lastClass, setLastClass] = useStored('zh.class', null)
   const [proClass, setProClass] = useStored('zh.proclass', null)
   const [colors, setColors] = useStored('zh.colors', {})
 
-  const cur = classes.includes(lastClass) ? lastClass : classes[0] ?? null
-  const [{ queue, cats, hours, sessions, live, ready }, refresh] = useQueue(role === 'student' ? cur : proClass)
+  // Everything about classes comes from the Anteater API, through our backend.
+  const [enrollment, enrollError] = useLoaded('zh.enrolled', () => api.loadEnrollment(CURRENT_STUDENT.crns))
+  const [prof, profError] = useLoaded('zh.prof', () => api.loadProfessor(CURRENT_PROFESSOR.ucinetid))
+  const classes = useMemo(() => api.classesOf(enrollment?.sections ?? []), [enrollment])
+  const proCourses = prof?.courses ?? []
+  const proCourseLabels = proCourses.map((c) => c.course)
+
+  const cur = classes.some((c) => c.course === lastClass) ? lastClass : null
+  const curProClass = proCourseLabels.includes(proClass) ? proClass : null
+  const me = { name: CURRENT_STUDENT.name, section: (classes.find((c) => c.course === cur)?.sections ?? []).map(sectionName).join(', ') }
+
+  const active = role === 'student' ? (view === 'class' ? cur : null) : (view === 'course' ? curProClass : null)
+  const [{ queue, cats, hours, sessions, live, ready }, refresh] = useQueue(active)
   const groups = useMemo(() => groupUp(queue, cats), [queue, cats])
-  const courses = useMemo(() => [...new Set(sessions.map((s) => s.course))], [sessions])
 
   // Give every class a color the first time we see it, in order, and remember it.
-  const known = [...classes, ...courses].join('|')
+  const known = [...classes.map((c) => c.course), ...proCourseLabels].join('|')
   useEffect(() => {
     const missing = known.split('|').filter((c) => c && colors[c] === undefined)
     if (missing.length) setColors((prev) => {
@@ -125,32 +173,40 @@ export default function App() {
 
   useEffect(() => { document.documentElement.dataset.theme = theme }, [theme])
   useEffect(() => { if (toast) { const t = setTimeout(() => setToast(null), 3500); return () => clearTimeout(t) } }, [toast])
+  // The page header is sticky; other sticky things sit just under it, so share its height.
+  useEffect(() => {
+    const el = topRef.current
+    if (!el) return
+    const set = () => document.documentElement.style.setProperty('--top-h', `${el.offsetHeight}px`)
+    set()
+    const ro = new ResizeObserver(set)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
   const act = async (fn, ok) => {
     try { const r = await fn(); if (ok) setToast(typeof ok === 'function' ? ok(r) : ok); await refresh() } catch (e) { setToast(e.message) }
   }
   const openClass = (c) => { setLastClass(c); setView('class') }
-  const addClass = (c) => { setClasses((l) => (l.includes(c) ? l : [...l, c])); setToast(`Added ${c}.`) }
-  const removeClass = (c) => { setClasses((l) => l.filter((x) => x !== c)); setToast(`Removed ${c}.`) }
+  const openCourse = (c) => { setProClass(c); setView('course') }
+  const goHome = () => setView('home')
 
-  const navButtons = [['classes', 'My classes'], ['add', 'Add a class'], ['profile', 'Profile']]
   const studentProps = { queue, groups, cats, hours, act, live, ready, me, course: cur, go: setView }
 
   return (
     <Colors.Provider value={colorOf}>
       <div className="shell">
-        <header className="top">
+        <header className="top" ref={topRef}>
           <strong className="logo">zot hours</strong>
+          <button className="home" aria-current={view === 'home' ? 'page' : undefined} onClick={goHome}><HomeIcon />Home</button>
           <nav className="tabs" aria-label="View">
             {['student', 'professor'].map((r) => (
-              <button key={r} className={role === r ? 'on' : ''} onClick={() => { setRole(r); setView('class') }}>{r === 'student' ? 'Student' : 'Professor'}</button>
+              <button key={r} className={role === r ? 'on' : ''} onClick={() => { setRole(r); setView('home') }}>{r === 'student' ? 'Student' : 'Professor'}</button>
             ))}
           </nav>
           <div className="top-right">
             {!live && ready && <span className="pill muted" title="Backend not reachable, using local demo data">Demo data</span>}
             {hours && <span className={`cc cc-${colorOf(hours.course)} pill tinted ${hours.state === 'closed' ? 'closed' : ''}`}><i />{hours.course} {hours.state === 'running' ? 'is open' : hours.state === 'upcoming' ? `starts ${when(hours.starts_at)}` : 'has ended'}</span>}
-            {role === 'student' && navButtons.map(([v, label]) => (
-              <button key={v} className="ghost" aria-current={view === v ? 'page' : undefined} onClick={() => setView(v)}>{label}</button>
-            ))}
+            {role === 'student' && <button className="ghost" aria-current={view === 'profile' ? 'page' : undefined} onClick={() => setView('profile')}>Profile</button>}
             <button className="ghost" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label="Toggle light and dark mode">
               {theme === 'dark' ? 'Light mode' : 'Dark mode'}
             </button>
@@ -158,15 +214,17 @@ export default function App() {
         </header>
         <main>
           {role === 'professor' ? (
-            <Professor {...{ groups, queue, cats, hours, act, live, ready, courses, setProClass }} />
-          ) : view === 'classes' ? (
-            <ClassList {...{ classes, sessions, cur, openClass, removeClass, go: setView }} />
-          ) : view === 'add' ? (
-            <AddClass {...{ classes, courses, addClass, cur, go: setView }} />
+            view === 'course' && curProClass ? (
+              <Professor {...{ groups, queue, cats, hours, act, live, ready, courses: proCourseLabels, course: curProClass, info: proCourses.find((c) => c.course === curProClass), setProClass: openCourse, goHome }} />
+            ) : (
+              <ProHome {...{ prof, profError, sessions, openCourse }} />
+            )
           ) : view === 'profile' ? (
-            <Profile {...{ me, setMe, classes, cur, openClass, go: setView }} />
-          ) : (
+            <Profile {...{ me, classes, enrollment, enrollError, go: setView }} />
+          ) : view === 'class' && cur ? (
             <Student {...studentProps} />
+          ) : (
+            <StudentHome {...{ me, classes, enrollment, enrollError, sessions, openClass }} />
           )}
         </main>
         {toast && <div className="toast" role="status">{toast}</div>}
@@ -175,8 +233,32 @@ export default function App() {
   )
 }
 
-function Back({ cur, go }) {
-  return cur ? <button className="link" onClick={() => go('class')}>← Back to {cur}</button> : null
+function HomeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M3 11.5 12 4l9 7.5" /><path d="M5 10v10h14V10" /><path d="M10 20v-6h4v6" />
+    </svg>
+  )
+}
+
+// Open padlock = free to move by score. Closed padlock = held in its spot.
+function LockIcon({ locked }) {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="5" y="11" width="14" height="10" rx="2" fill={locked ? 'currentColor' : 'none'} />
+      <path d={locked ? 'M8 11V8a4 4 0 0 1 8 0v3' : 'M8 11V8a4 4 0 0 1 7.5-1.5'} />
+    </svg>
+  )
+}
+
+// The question's category as a colored capsule.
+function Cat({ type, cats }) {
+  const i = Math.max(0, Object.keys(cats).indexOf(type))
+  return <span className={`cc cc-${i % PALETTE} catcap`}>{cats[type]?.label || type}</span>
+}
+
+function Back({ go, label = 'All classes' }) {
+  return <button className="link" onClick={() => go('home')}>← {label}</button>
 }
 
 function sessionLine(sessions, course) {
@@ -188,66 +270,102 @@ function sessionLine(sessions, course) {
   return 'Last session has ended'
 }
 
-function ClassList({ classes, sessions, cur, openClass, removeClass, go }) {
+function Status({ enrollment, enrollError, what }) {
+  if (enrollment) return null
+  return (
+    <div className="card">
+      <h2>{enrollError ? `Couldn't load ${what}` : `Loading ${what}…`}</h2>
+      <p className="muted pad">{enrollError ? `${enrollError}. Is the backend running (./dev.sh)? Trying again every few seconds.` : 'Asking the Anteater API.'}</p>
+    </div>
+  )
+}
+
+function SectionLines({ sections }) {
+  return (
+    <ul className="seclines">
+      {sections.map((s) => (
+        <li key={s.section_code}>
+          <b>{sectionName(s)}</b> <span className="muted">{s.section_code} · {meetingText(s)}{s.instructors.length > 0 && ` · ${s.instructors.join(', ')}`}</span>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function StudentHome({ me, classes, enrollment, enrollError, sessions, openClass }) {
+  const failed = enrollment?.failed ?? []
   return (
     <section className="stack narrow">
-      <Back cur={cur} go={go} />
-      <h1>Your classes</h1>
-      {classes.length === 0 && <div className="card"><p className="muted">No classes yet. Add one to see its office hours and line.</p><button className="btn primary" onClick={() => go('add')}>Add a class</button></div>}
+      <h1>Hey {me.name}. Pick a class.</h1>
+      <p className="muted">Your classes this quarter, straight from the Anteater API.</p>
+      <Status {...{ enrollment, enrollError }} what="your classes" />
+      {enrollment && classes.length === 0 && <div className="card"><p className="muted">Anteater didn't return any classes. Check the section codes in <code>frontend/src/config.js</code>.</p></div>}
       <ul className="rows">
         {classes.map((c) => (
-          <li key={c} className="card row">
-            <div className="grow"><ClassTag course={c} /><small>{sessionLine(sessions, c)}</small></div>
-            <div className="btns">
-              <button className="btn dark" onClick={() => openClass(c)}>Open</button>
-              <button className="btn outline" onClick={() => removeClass(c)} aria-label={`Remove ${c}`}>Remove</button>
+          <li key={c.course} className="card dash">
+            <div className="grow">
+              <ClassTag course={c.course} />
+              <b>{c.title}</b>
+              <SectionLines sections={c.sections} />
+              <small>{sessionLine(sessions, c.course)}</small>
             </div>
+            <button className="btn dark" onClick={() => openClass(c.course)}>Open</button>
           </li>
         ))}
       </ul>
+      {failed.length > 0 && <p className="fine left">Anteater couldn't find: {failed.join('; ')}</p>}
     </section>
   )
 }
 
-function AddClass({ classes, courses, addClass, cur, go }) {
-  const available = courses.filter((c) => !classes.includes(c))
+function Profile({ me, classes, enrollment, enrollError, go }) {
   return (
     <section className="stack narrow">
-      <Back cur={cur} go={go} />
-      <h1>Add a class</h1>
-      <p className="muted">These are the classes that have office hours scheduled.</p>
-      {available.length === 0 && <div className="card"><p className="muted">Every class with office hours is already on your list. When a professor schedules one for another class, it shows up here.</p></div>}
-      <ul className="rows">
-        {available.map((c) => (
-          <li key={c} className="card row">
-            <div className="grow"><ClassTag course={c} /></div>
-            <button className="btn primary" onClick={() => addClass(c)}>Add</button>
-          </li>
-        ))}
-      </ul>
-    </section>
-  )
-}
-
-function Profile({ me, setMe, classes, cur, openClass, go }) {
-  return (
-    <section className="stack narrow">
-      <Back cur={cur} go={go} />
+      <Back go={go} />
       <h1>Profile</h1>
-      <div className="card form">
-        <div className="row2">
-          <label>Name<input value={me.name} onChange={(e) => setMe({ ...me, name: e.target.value })} /></label>
-          <label>Class section<input value={me.section} onChange={(e) => setMe({ ...me, section: e.target.value })} /></label>
-        </div>
-        <p className="muted">Used to fill in the join form. Changes save as you type.</p>
-      </div>
       <div className="card">
-        <h2>Classes</h2>
-        {classes.length === 0 && <p className="muted pad">None yet.</p>}
-        <ul className="chips pad">
-          {classes.map((c) => <li key={c} style={{ listStyle: 'none' }}><ClassChip course={c} on={c === cur} onClick={() => openClass(c)} /></li>)}
-        </ul>
+        <p className="muted">Name</p>
+        <h2>{me.name}</h2>
       </div>
+      <Status {...{ enrollment, enrollError }} what="your classes" />
+      {classes.map((c) => (
+        <div key={c.course} className="card">
+          <ClassTag course={c.course} />
+          <p className="pad"><b>{c.title}</b></p>
+          <SectionLines sections={c.sections} />
+        </div>
+      ))}
+    </section>
+  )
+}
+
+function ProHome({ prof, profError, sessions, openCourse }) {
+  const courses = prof?.courses ?? []
+  const waiting = courses.reduce((a, c) => a + (api.bestSession(sessions, c.course)?.waiting_count ?? 0), 0)
+  return (
+    <section className="stack narrow">
+      <h1>{prof ? `${prof.name}'s courses` : 'Your courses'}</h1>
+      {prof && <p className="muted">{prof.quarter} {prof.year} · {courses.length} {courses.length === 1 ? 'course' : 'courses'} · {waiting} {waiting === 1 ? 'student' : 'students'} waiting. Each course has its own office hours and line.</p>}
+      {!prof && (
+        <div className="card">
+          <h2>{profError ? "Couldn't load your courses" : 'Loading your courses…'}</h2>
+          <p className="muted pad">{profError ? `${profError}. Is the backend running (./dev.sh)? Trying again every few seconds.` : 'Asking the Anteater API.'}</p>
+        </div>
+      )}
+      {prof && courses.length === 0 && <div className="card"><p className="muted">Anteater lists no lecture courses for {prof.name} in {prof.quarter} {prof.year}.</p></div>}
+      <ul className="rows">
+        {courses.map((c) => (
+          <li key={c.course} className="card dash">
+            <div className="grow">
+              <ClassTag course={c.course} />
+              <b>{c.course_title}</b>
+              <SectionLines sections={c.sections.filter((x) => x.section_type === 'Lec')} />
+              <small>{sessionLine(sessions, c.course)}</small>
+            </div>
+            <button className="btn dark" onClick={() => openCourse(c.course)}>Open queue</button>
+          </li>
+        ))}
+      </ul>
     </section>
   )
 }
@@ -295,13 +413,14 @@ function Student({ queue, groups, cats, hours, act, live, ready, me, course, go 
     }
   }
 
+  // The student's most recent question still waiting (mine is in the order they asked).
+  // "Your spot" shows this one, and "Fixed it" marks only this one done.
+  const latest = [...mine].reverse().map((m) => myTickets.find((t) => t.id === m.id)).find(Boolean)
   // Place in line is counted in groups, the same way the list on the right is numbered.
-  const myGroupIdx = groups.findIndex((g) => g.tickets.some(isMine))
+  const myGroupIdx = latest ? groups.findIndex((g) => g.id === latest.bucket_id) : -1
   const pos = myGroupIdx + 1
   const wait = myGroupIdx < 0 ? 0 : groups.slice(0, myGroupIdx + 1).reduce((a, g) => a + g.mins, 0)
-  const lateMine = myTickets.length > 0 && myTickets.every((t) => t.in_late_section)
-  // Estimated turn time from the backend (rounded to 5 minutes). Not in demo mode.
-  const myTurn = myTickets.find((t) => t.estimated_turn_at)
+  const lateMine = !!latest?.in_late_section
   // Where a brand-new question would land. Once the session is running it goes behind
   // everyone already waiting; before that, it's ranked by score among on-time questions.
   const c = cats[type]
@@ -327,9 +446,10 @@ function Student({ queue, groups, cats, hours, act, live, ready, me, course, go 
   const startNew = () => (running ? setConfirm(true) : submit())
   const ok = canJoin && hasProfile && n > 0 && !over
 
-  // "Fixed it" marks the student done; "Leave the line" marks them left.
+  // "Fixed it" marks only the latest question done; "Leave the line" takes the student
+  // out of every group they're in. Other students' tickets (like the samples) aren't touched.
   const finish = (kind) => {
-    const ts = myTickets
+    const ts = kind === 'done' ? [latest] : myTickets
     return act(async () => {
       await Promise.all(ts.map((t) => (kind === 'done' ? api.update(t.id, { status: 'done' }) : api.leave(t.id))))
       setPast((p) => [...ts.map((t) => ({ id: t.id, question: t.question, status: kind, course, at: Date.now() })), ...p].slice(0, 30))
@@ -337,18 +457,12 @@ function Student({ queue, groups, cats, hours, act, live, ready, me, course, go 
   }
   const myPast = past.filter((p) => p.course === course).slice(0, 5)
 
-  if (!course) {
-    return (
-      <section className="stack narrow">
-        <h1>No classes yet</h1>
-        <div className="card"><p className="muted">Add a class to see its office hours and join the line.</p><button className="btn primary" onClick={() => go('add')}>Add a class</button></div>
-      </section>
-    )
-  }
+  if (!course) return null
 
   return (
     <div className="grid student">
-      <section className="stack">
+      <section className="stack askcol">
+        <Back go={go} />
         <div className={`cc cc-${colorOf(course)} band`}>
           <h2>{course}</h2>
           <span>{hours ? `${hours.location} · ${when(hours.starts_at)}` : ready ? 'No sessions scheduled' : ''}</span>
@@ -361,9 +475,9 @@ function Student({ queue, groups, cats, hours, act, live, ready, me, course, go 
             <p className="muted pad">{hours ? 'Your professor will post the next session here.' : 'Once your professor schedules a session, you can save your spot here.'}</p>
           </div>
         ) : (
-          <>
-            <div className="card form">
-              {!hasProfile && <p className="muted">Add your name and section on the <button className="link inline" onClick={() => go('profile')}>profile page</button> first.</p>}
+          <div className="askstick">
+            <div className="card form ask">
+              {!hasProfile && <p className="muted">We couldn't find your section for this class yet. Check your <button className="link inline" onClick={() => go('profile')}>profile</button>.</p>}
               <label>In a sentence or two
                 <textarea rows={3} value={q} onChange={(e) => setQ(e.target.value)} placeholder="My recursive flatten() returns None for nested lists, but works for flat ones." />
               </label>
@@ -385,6 +499,7 @@ function Student({ queue, groups, cats, hours, act, live, ready, me, course, go 
                 </div>
               </div>
             )}
+            <div className="savebar">
             {confirm ? (
               <div className="card hint" role="alertdialog" aria-label="Session already started">
                 <h3>This session has started</h3>
@@ -400,7 +515,8 @@ function Student({ queue, groups, cats, hours, act, live, ready, me, course, go 
                 <p className="fine">{ok ? `You'd be ${ordinal(nextSpot)} in line, about ${nextWait} minutes.` : 'Add a question (25 words max) to save your spot.'}</p>
               </div>
             )}
-          </>
+            </div>
+          </div>
         )}
       </section>
 
@@ -409,14 +525,9 @@ function Student({ queue, groups, cats, hours, act, live, ready, me, course, go 
           <div className="card spot">
             <p className="muted">Your spot</p>
             <h2 className="big">{ordinal(pos)} in line</h2>
-            {myTurn?.past_session_end ? (
-              <p className="turn warn">You may not be reached this session. If not, you'll move to the next session with a boost.</p>
-            ) : myTurn ? (
-              <p className="turn">Your turn: about <b>{turnTime(myTurn.estimated_turn_at)}</b></p>
-            ) : (
-              <p>About {wait} minutes.</p>
-            )}
-            {groups[myGroupIdx].tickets.length > 1 && <p>You're sharing this with {groups[myGroupIdx].tickets.length - 1} other.</p>}
+            <p>“{groups[myGroupIdx].title}”</p>
+            <p>About {wait} minutes. {groups[myGroupIdx].tickets.length > 1 && `You're sharing this with ${groups[myGroupIdx].tickets.length - 1} other.`}</p>
+            {myBuckets.size > 1 && <p className="muted">You have {myBuckets.size - 1} other {myBuckets.size === 2 ? 'question' : 'questions'} in line too.</p>}
             {lateMine && <p className="muted">You joined after the session started, so you're behind everyone who was already waiting.</p>}
             <div className="btns">
               <button className="btn outline" onClick={() => finish('done')}>Fixed it, thanks</button>
@@ -461,7 +572,8 @@ function Student({ queue, groups, cats, hours, act, live, ready, me, course, go 
   )
 }
 
-function Professor({ groups, queue, cats, hours, act, live, ready, courses, setProClass }) {
+function Professor({ groups, queue, cats, hours, act, live, ready, courses, course, info, setProClass, goHome }) {
+  const colorOf = useContext(Colors)
   const [helped, setHelped] = useStored('zh.helped', 0)
   const [form, setForm] = useState(null)
   const [drag, setDrag] = useState(null) // { from, to } (indexes in the list) while a group is being dragged
@@ -470,15 +582,10 @@ function Professor({ groups, queue, cats, hours, act, live, ready, courses, setP
   const [first, ...rest] = groups
   const left = groups.reduce((a, g) => a + g.mins, 0)
   const saved = groups.reduce((a, g) => a + g.solo - g.mins, 0)
-  const topics = useMemo(() => {
-    const m = {}; queue.forEach((t) => { const l = cats[t.question_type]?.label || t.question_type; m[l] = (m[l] || 0) + 1 })
-    return Object.entries(m).sort((a, b) => b[1] - a[1])
-  }, [queue, cats])
-  const peak = Math.max(1, ...topics.map((t) => t[1]))
   const finish = (g) => act(async () => { await api.resolveGroup(g.id, g.tickets); setHelped((h) => h + g.tickets.length) })
   // Dropping a group pins it at that spot (1 = top, counted in groups).
-  const pin = (g, position) => act(() => api.pinGroup(g.id, position), `Moved to spot ${position}. It stays there until you unpin it.`)
-  const unpin = (g) => act(() => api.pinGroup(g.id, null), 'Unpinned. The score decides its spot again.')
+  const pin = (g, position) => act(() => api.pinGroup(g.id, position), `Locked in spot ${position}. It stays there until you unlock it.`)
+  const unpin = (g) => act(() => api.pinGroup(g.id, null), 'Unlocked. The score decides its spot again.')
 
   // Drag handle: pointer events work for mouse, pen and touch. Arrow keys move a group too.
   const dropTo = (clientY, from) => {
@@ -504,6 +611,18 @@ function Professor({ groups, queue, cats, hours, act, live, ready, courses, setP
       }}
     >⋮⋮</button>
   )
+  // Lock = held in its spot. Closed lock: click to release. Open lock: click to hold it where it is.
+  const lockBtn = (g, i) => {
+    const pinned = isPinned(g)
+    return (
+      <button
+        type="button" className={`lock${pinned ? ' on' : ''}`} aria-pressed={pinned}
+        aria-label={pinned ? `Unlock “${g.title}”. The score decides its spot again.` : `Lock “${g.title}” in spot ${i + 1}.`}
+        title={pinned ? 'Locked in this spot. Click to unlock.' : 'Click to lock it in this spot.'}
+        onClick={() => (pinned ? unpin(g) : pin(g, i + 1))}
+      ><LockIcon locked={pinned} /></button>
+    )
+  }
   const dragClass = (i) => {
     if (!drag) return ''
     if (i === drag.from) return ' dragging'
@@ -514,25 +633,30 @@ function Professor({ groups, queue, cats, hours, act, live, ready, courses, setP
   return (
     <div className="grid pro">
       <section className="stack">
-        {courses.length > 0 && (
-          <div className="chips" role="group" aria-label="Class">
+        <button className="link" onClick={goHome}>← All courses</button>
+        {courses.length > 1 && (
+          <div className="chips" role="group" aria-label="Course">
             {courses.map((c) => (
-              <ClassChip key={c} course={c} on={hours?.course === c} onClick={() => setProClass(c)} />
+              <ClassChip key={c} course={c} on={course === c} onClick={() => setProClass(c)} />
             ))}
           </div>
         )}
+        <div className={`cc cc-${colorOf(course)} band`}>
+          <h2>{course}</h2>
+          <span>{info?.course_title}</span>
+        </div>
         <h1>{queue.length} {queue.length === 1 ? 'student' : 'students'}, {groups.length} {groups.length === 1 ? 'conversation' : 'conversations'}.</h1>
         {first ? (
           <div className={`next${dragClass(0)}`} ref={(el) => { refs.current[0] = el }}>
             <div>
-              <p className="eyebrow">Next up{isPinned(first) && ' · Pinned'}</p>
+              <p className="eyebrow">Next up</p>
               <h2 className="big">{first.title}</h2>
               <p><Names tickets={first.tickets} /> {first.tickets.length > 1 ? 'are all' : 'is'} stuck on this. About {first.mins} minutes.</p>
-              {hours && <p><ClassTag course={hours.course} /></p>}
+              <div className="tags">{hours && <ClassTag course={hours.course} />}<Cat type={first.type} cats={cats} /></div>
               <div className="btns">
                 <button className="btn light" onClick={() => finish(first)}>{first.tickets.length > 1 ? `Start with all ${first.tickets.length}` : 'Start with this student'}</button>
                 {grip(first, 0)}
-                {isPinned(first) && <button className="link" onClick={() => unpin(first)}>Unpin</button>}
+                {lockBtn(first, 0)}
                 {first.solo > first.mins && <span>Saves about {first.solo - first.mins} minutes</span>}
               </div>
             </div>
@@ -548,13 +672,12 @@ function Professor({ groups, queue, cats, hours, act, live, ready, courses, setP
               <Fragment key={g.id}>
                 {isLate(g) && !isLate(prev) && <li className="divider" aria-hidden="true"><span>Joined after the session started</span></li>}
                 <li className={`card row${dragClass(i)}`} ref={(el) => { refs.current[i] = el }}>
-                  <span className="num">{g.tickets.length}</span>
+                  <Cat type={g.type} cats={cats} />
                   <div>
                     <b>{g.title}</b>
                     <small>
                       {hours && <><ClassTag course={hours.course} />{' '}</>}
-                      <Names tickets={g.tickets} /> · ~{g.mins} min
-                      {isPinned(g) && <> · <span className="badge">Pinned</span> <button className="link inline" onClick={() => unpin(g)}>Unpin</button></>}
+                      <Names tickets={g.tickets} /> · {g.tickets.length} {g.tickets.length === 1 ? 'student' : 'students'} · ~{g.mins} min
                       {g.tickets.some((t) => t.overflow_count > 0) && ' · pushed from last session'}
                       {isLate(g) && ' · joined late'}
                     </small>
@@ -562,13 +685,14 @@ function Professor({ groups, queue, cats, hours, act, live, ready, courses, setP
                   <div className="btns">
                     <button className="btn outline" onClick={() => finish(g)}>{g.tickets.length > 1 ? 'Help together' : 'Help'}</button>
                     {grip(g, i)}
+                    {lockBtn(g, i)}
                   </div>
                 </li>
               </Fragment>
             )
           })}
         </ol>
-        {groups.length > 1 && <p className="muted small-note">Drag the handle to pin a group at a spot, or focus it and press the up and down arrow keys. Pinned groups stay put whatever the score says.</p>}
+        {groups.length > 1 && <p className="muted small-note">Drag the handle to move a group; it locks where you drop it. Click an open lock to hold a group in its current spot, or a closed lock to let the score decide again. Locked groups stay put whatever the score says.</p>}
       </section>
 
       <aside className="stack">
@@ -579,13 +703,6 @@ function Professor({ groups, queue, cats, hours, act, live, ready, courses, setP
             <div><dd>{left}m</dd><dt>left in queue</dt></div>
             <div><dd className="accent">−{saved}m</dd><dt>from grouping</dt></div>
           </dl>
-        </div>
-        <div className="card">
-          <h2>What's coming up</h2>
-          {topics.length === 0 && <p className="muted pad">Nothing yet.</p>}
-          {topics.map(([l, c]) => (
-            <div key={l} className="bar"><span>{l}<b>{c}</b></span><i style={{ width: `${(c / peak) * 100}%` }} /></div>
-          ))}
         </div>
         {hours && form && (
           <div className="card form">
@@ -607,7 +724,7 @@ function Professor({ groups, queue, cats, hours, act, live, ready, courses, setP
             {!live && <button className="link" onClick={() => { api.resetDemo(); ['zh.mine2', 'zh.past'].forEach((k) => localStorage.removeItem(k)); location.reload() }}>Reset demo data</button>}
           </div>
         )}
-        <NewSession act={act} course={hours?.course} alwaysOpen={ready && !hours} onCreated={setProClass} />
+        <NewSession act={act} course={course} courses={courses} alwaysOpen={ready && !hours} onCreated={setProClass} />
       </aside>
     </div>
   )
@@ -622,10 +739,10 @@ function ClassChip({ course, on, onClick }) {
   )
 }
 
-function NewSession({ act, course, alwaysOpen, onCreated }) {
+function NewSession({ act, course, courses, alwaysOpen, onCreated }) {
   const [open, setOpen] = useState(false)
   const [f, setF] = useState(() => ({ course: course || '', location: '', starts_at: api.inHours(24), ends_at: api.inHours(26) }))
-  useEffect(() => { if (course) setF((x) => (x.course ? x : { ...x, course })) }, [course])
+  useEffect(() => { if (course) setF((x) => ({ ...x, course })) }, [course])
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value })
   const valid = f.course.trim() && f.location.trim() && f.starts_at && f.ends_at && f.ends_at > f.starts_at
 
@@ -636,7 +753,11 @@ function NewSession({ act, course, alwaysOpen, onCreated }) {
     <div className="card form">
       <h2>{alwaysOpen ? 'No sessions yet. Schedule one.' : 'New session'}</h2>
       <div className="row2">
-        <label>Course<input value={f.course} onChange={set('course')} placeholder="ICS 32" /></label>
+        <label>Course
+          {courses.length > 0
+            ? <select value={f.course} onChange={set('course')}>{courses.map((c) => <option key={c} value={c}>{c}</option>)}</select>
+            : <input value={f.course} onChange={set('course')} placeholder="COMPSCI 161" />}
+        </label>
         <label>Location<input value={f.location} onChange={set('location')} placeholder="DBH 1100" /></label>
       </div>
       <div className="row2">
