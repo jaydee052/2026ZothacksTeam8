@@ -240,6 +240,12 @@ def _conflict(a, b):
     return any(x and y and x.isdisjoint(y) for x, y in checks)
 
 
+def conflicts(a, b):
+    """True if two questions name different things (assignment 3 vs 4, Mac vs
+    Windows, ...), so they can't be the same question however alike they read."""
+    return _conflict(_Question(a), _Question(b))
+
+
 def similarity(a, b):
     qa, qb = _Question(a), _Question(b)
     if not qa.weights or not qb.weights or _conflict(qa, qb):

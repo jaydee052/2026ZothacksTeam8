@@ -121,6 +121,7 @@ Place in line ("You are #N") is counted within your own session.
 ## Groups and Similar Questions
 
 - Every new question starts its own group (a "bucket"). Students with the same question join that group instead of asking again.
+- **Automatic grouping (AI):** when a question is submitted, the backend sends it to Google's `gemini-embedding-001` model, which returns a vector describing what it means. If an open group in the same session and category has a vector at least 0.88 alike (cosine similarity), the student joins that group automatically. Otherwise the question starts a new group, and its vector is saved on the group. The rule checks below (different assignment number, different kind of ask, etc.) can still veto a match. Needs `GEMINI_API_KEY` in `backend/.env`; without it, every question starts its own group as before. Set in `backend/embeddings.py`.
 - A group is answered together, so a bigger group scores higher (Student × 5) and saves the professor time.
 - A group closes when nobody in it is still waiting, and reopens if a student is put back in line.
 - If a student's category changes and they share a group, they move to a group of their own.

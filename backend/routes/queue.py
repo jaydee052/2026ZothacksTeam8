@@ -2,9 +2,10 @@
 from flask import Blueprint, jsonify, request
 from sqlalchemy import func, select
 
-from bucket_rules import sync_bucket_status
+from bucket_rules import add_to_bucket, sync_bucket_status
 from pins import leaving_line
 from db import create_bucket, get_db
+from embeddings import closest_bucket, embed
 from models import Bucket, OfficeHours, Ticket
 from priority import score
 from queue_order import get_ticket, session_line
@@ -72,21 +73,36 @@ def join_queue():
         # Questions submitted after the session starts go to the back of the line.
         late = has_started(session)
 
-        # Every new question starts its own bucket that other students can join.
-        bucket = create_bucket(db, question, question_type, session.id, late)
-        ticket = Ticket(
-            student_name=name,
-            class_section=section,
-            question=question,
-            question_type=question_type,
-            priority=score(question_type),
-            office_hours_id=session.id,
-            bucket_id=bucket.id,
-            late=late,
-        )
-        db.add(ticket)
+        # The question joins the open bucket closest in meaning, if one is close
+        # enough (see embeddings.py). Otherwise it starts its own bucket that
+        # other students can join.
+        vector = embed(question)
+        bucket, match = (None, 0.0)
+        if vector is not None:
+            bucket, match = closest_bucket(db, question, vector, question_type, session.id)
+
+        if bucket is not None:
+            ticket = add_to_bucket(db, bucket, name, section, question)
+        else:
+            bucket = create_bucket(db, question, question_type, session.id, late, vector)
+            ticket = Ticket(
+                student_name=name,
+                class_section=section,
+                question=question,
+                question_type=question_type,
+                priority=score(question_type),
+                office_hours_id=session.id,
+                bucket_id=bucket.id,
+                late=late,
+            )
+            db.add(ticket)
         db.commit()
-        return jsonify(get_ticket(db, ticket.id)), 201
+
+        data = get_ticket(db, ticket.id)
+        # Tells the student their question was grouped with a classmate's.
+        data["joined_existing_bucket"] = match > 0
+        data["bucket_similarity"] = match or None
+        return jsonify(data), 201
 
 
 @bp.patch("/<int:ticket_id>")
