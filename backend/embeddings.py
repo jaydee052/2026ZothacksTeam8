@@ -18,7 +18,7 @@ from urllib.request import Request, urlopen
 
 from sqlalchemy import select
 
-from models import Bucket
+from models import Bucket, Ticket
 from similarity import conflicts
 
 MODEL = "gemini-embedding-001"
@@ -86,11 +86,21 @@ def closest_bucket(db, question, vector, question_type, office_hours_id):
         Bucket.office_hours_id == office_hours_id,
     )).all()
 
+    # Every question in each bucket: the one that started it, plus everyone waiting.
+    asked = {bucket.id: [bucket.title] for bucket in buckets}
+    if asked:
+        rows = db.execute(select(Ticket.bucket_id, Ticket.question).where(
+            Ticket.bucket_id.in_(asked), Ticket.status == "waiting"
+        ))
+        for bucket_id, member_question in rows:
+            asked[bucket_id].append(member_question)
+
     best, best_match = None, 0.0
     for bucket in buckets:
         # Embeddings rate "assignment 3" and "assignment 4" as nearly the same,
-        # so the rule-based checks get a veto.
-        if conflicts(question, bucket.title):
+        # so the rule-based checks get a veto, against everyone in the bucket:
+        # otherwise both could join a bucket that started as "the last homework".
+        if any(conflicts(question, other) for other in asked[bucket.id]):
             continue
         if bucket.embedding is None:
             # Buckets from before embeddings: embed their question once and keep it.
