@@ -32,7 +32,7 @@ Feature details are in [spec.md](spec.md).
 - [ ] Whether TA queues are in scope for the hackathon or a stretch goal.
 - [ ] When a session is already running, should a student who doesn't pick a session join it as late, or be offered the next session to be on time? (Currently they join the running one as late. The frontend can offer the choice by sending `office_hours_id`.)
 - [ ] Should places in line count **groups** (a group of 3 is one spot, as the screen does now) or **students** (as the backend's `position` does)? This affects "You are #N" and where drag-and-drop puts a group.
-- [ ] Does the professor page show one class at a time, or every class together, color coded? (ui-spec.md sections 2 and 8)
+- [x] The professor page shows one class at a time, picked with class chips (the frontend's choice)
 - [ ] Should "Add classes" pick from courses that have sessions scheduled, or from all real UCI classes (from the Anteater API)?
 - [x] Professor bumps on late questions: bumping up moves the question into the main line at its score + 15; bumping down is refused, since it's already at the back.
 
