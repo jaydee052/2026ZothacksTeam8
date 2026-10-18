@@ -2,10 +2,9 @@
 .top { display: flex; align-items: center; gap: 24px; padding: 20px 0; flex-wrap: wrap; }
 .logo { font-size: 20px; font-weight: 800; letter-spacing: -0.02em; background: none; border: 0; padding: 0; color: var(--text); }
 .logo:hover { color: var(--blue-text); }
-.tabs { display: flex; gap: 16px; align-items: center; }
 .top-right { margin-left: auto; display: flex; gap: 16px; align-items: center; }
 /* Nav buttons: plain text, split by thin vertical lines. The current one is bold blue. */
-.navbtn { border: 0; background: none; padding: 4px 0; font-size: 15px; font-weight: 500; color: var(--muted); }
+.navbtn { border: 0; background: none; padding: 4px 0; text-decoration: none; font-size: 15px; font-weight: 500; color: var(--muted); }
 .navbtn:hover { color: var(--text); }
 .navbtn[aria-current] { color: var(--blue-text); font-weight: 700; }
 .vsep { flex: none; width: 1px; height: 18px; background: var(--line); }
