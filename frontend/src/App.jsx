@@ -1,6 +1,6 @@
 import { Fragment, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import * as api from './api.js'
-import { CURRENT_PROFESSOR, CURRENT_STUDENT } from './config.js'
+import { CURRENT_PROFESSOR, STUDENTS } from './config.js'
 
 const ls = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d } catch { return d } }
 const useStored = (k, d) => {
@@ -134,18 +134,46 @@ function useQueue(course) {
   return [state, refresh]
 }
 
-export default function App() {
+// ---- Pages by address, so each one can sit in its own tab for a split-screen demo ----
+// Like the real app, a page never links to another role: the nav bar has no
+// student/professor switch. Open each address in its own tab.
+//   /student/1, /student/2 ...   one page per student in STUDENTS (config.js)
+//   /professor                   the professor
+// Anything else (like "/") shows the first student.
+const pathOf = (r) => (r.role === 'professor' ? '/professor' : `/student/${r.studentId}`)
+function readRoute() {
+  const m = window.location.pathname.match(/^\/(student|professor)(?:\/(\d+))?\/?$/)
+  const id = Number(m?.[2])
+  return {
+    role: m?.[1] === 'professor' ? 'professor' : 'student',
+    studentId: STUDENTS.some((x) => x.id === id) ? id : STUDENTS[0].id,
+  }
+}
+
+export default function Root() {
+  const [route, setRoute] = useState(readRoute)
+  useEffect(() => {
+    if (window.location.pathname !== pathOf(route)) window.history.replaceState(null, '', pathOf(route))
+    const onBack = () => setRoute(readRoute())
+    window.addEventListener('popstate', onBack)
+    return () => window.removeEventListener('popstate', onBack)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  const student = STUDENTS.find((x) => x.id === route.studentId)
+  // A fresh App per page, so each profile loads and keeps its own classes and questions.
+  return <App key={pathOf(route)} role={route.role} student={student} />
+}
+
+function App({ role, student }) {
   const [theme, setTheme] = useStored('zh.theme', 'dark')
-  const [role, setRole] = useStored('zh.role', 'student')
   const [view, setView] = useState('home') // student: home | class | profile.  professor: home | course
   const [toast, setToast] = useState(null)
   const topRef = useRef(null)
-  const [lastClass, setLastClass] = useStored('zh.class', null)
+  const [lastClass, setLastClass] = useStored(`zh.class.${student.id}`, null)
   const [proClass, setProClass] = useStored('zh.proclass', null)
   const [colors, setColors] = useStored('zh.colors', {})
 
   // Everything about classes comes from the Anteater API, through our backend.
-  const [enrollment, enrollError] = useLoaded('zh.enrolled', () => api.loadEnrollment(CURRENT_STUDENT.crns))
+  const [enrollment, enrollError] = useLoaded(`zh.enrolled.${student.id}`, () => api.loadEnrollment(student.crns))
   const [prof, profError] = useLoaded('zh.prof', () => api.loadProfessor(CURRENT_PROFESSOR.ucinetid))
   const classes = useMemo(() => api.classesOf(enrollment?.sections ?? []), [enrollment])
   const proCourses = prof?.courses ?? []
@@ -153,7 +181,7 @@ export default function App() {
 
   const cur = classes.some((c) => c.course === lastClass) ? lastClass : null
   const curProClass = proCourseLabels.includes(proClass) ? proClass : null
-  const me = { name: CURRENT_STUDENT.name, section: (classes.find((c) => c.course === cur)?.sections ?? []).map(sectionName).join(', ') }
+  const me = { id: student.id, name: student.name, section: (classes.find((c) => c.course === cur)?.sections ?? []).map(sectionName).join(', ') }
 
   const active = role === 'student' ? (view === 'class' ? cur : null) : (view === 'course' ? curProClass : null)
   const [{ queue, cats, hours, sessions, live, ready }, refresh] = useQueue(active)
@@ -201,15 +229,6 @@ export default function App() {
       <div className="shell">
         <header className="top" ref={topRef}>
           <button className="logo" aria-current={onHome ? 'page' : undefined} aria-label="zot hours, go home" onClick={goHome}>zot hours</button>
-          <Sep />
-          <nav className="tabs" aria-label="View">
-            {['student', 'professor'].map((r, i) => (
-              <Fragment key={r}>
-                {i > 0 && <Sep />}
-                <button className="navbtn" aria-current={role === r ? 'true' : undefined} onClick={() => { setRole(r); setView('home') }}>{r === 'student' ? 'Student' : 'Professor'}</button>
-              </Fragment>
-            ))}
-          </nav>
           <div className="top-right">
             {!live && ready && <><span className="pill muted" title="Backend not reachable, using local demo data">Demo data</span><Sep /></>}
             {hours && <><span className={`cc cc-${colorOf(hours.course)} pill tinted ${hours.state === 'closed' ? 'closed' : ''}`}><i />{hours.course} {hours.state === 'running' ? 'is open' : hours.state === 'upcoming' ? `starts ${when(hours.starts_at)}` : 'has ended'}</span><Sep /></>}
@@ -379,7 +398,9 @@ function Student({ queue, groups, cats, hours, act, live, ready, me, course, go 
   // [{ id, name }]. Matching the name too means leftover ids from a reset database
   // never claim someone else's ticket.
   const colorOf = useContext(Colors)
-  const [mine, setMine] = useStored('zh.mine2', [])
+  // Kept per student, so two student tabs in one browser don't claim each other's questions.
+  // Student 1 picks up the list saved before there were several students (zh.mine2).
+  const [mine, setMine] = useStored(`zh.mine.${me.id}`, me.id === 1 ? ls('zh.mine2', []) : [])
   const [q, setQ] = useState('')
   const [type, setType] = useState('understanding_topic')
   const [confirm, setConfirm] = useState(false)
@@ -728,7 +749,7 @@ function Professor({ groups, queue, cats, hours, act, live, ready, courses, cour
             {live && hours.state === 'running' && !hours.has_next && queue.length > 0 && (
               <p className="fine left">No later session · {queue.length} waiting will stay here</p>
             )}
-            {!live && <button className="link" onClick={() => { api.resetDemo(); localStorage.removeItem('zh.mine2'); location.reload() }}>Reset demo data</button>}
+            {!live && <button className="link" onClick={() => { api.resetDemo(); Object.keys(localStorage).filter((k) => k.startsWith('zh.mine')).forEach((k) => localStorage.removeItem(k)); location.reload() }}>Reset demo data</button>}
           </div>
         )}
         <NewSession act={act} course={course} courses={courses} alwaysOpen={ready && !hours} onCreated={setProClass} />
