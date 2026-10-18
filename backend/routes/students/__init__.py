@@ -4,4 +4,4 @@ from flask import Blueprint
 
 bp = Blueprint("students", __name__, url_prefix="/api/students")
 
-from . import add_section, list_sections  # noqa: E402,F401  (registers the routes)
+from . import add_section, list_sections, remove_section  # noqa: E402,F401  (registers the routes)

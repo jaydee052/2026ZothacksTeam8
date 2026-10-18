@@ -87,12 +87,17 @@ def init_db():
         ensure_demo_sessions(db)
         top_up_all(db)
 
-        # Hardcoded demo student (id 1). Classes are added through
-        # POST /api/students/1/sections, e.g. section code 34190 (COMPSCI 161).
-        if db.scalar(select(func.count()).select_from(Student)) == 0:
-            db.add(Student(name="Demo Student"))
+        # Hardcoded demo students, matching STUDENTS in frontend/src/config.js.
+        # Classes they add themselves go through POST /api/students/<id>/sections.
+        for student_id, name in DEMO_STUDENTS.items():
+            if db.get(Student, student_id) is None:
+                db.add(Student(id=student_id, name=name))
 
         db.commit()
+
+
+# Demo students by id; ids match STUDENTS in frontend/src/config.js.
+DEMO_STUDENTS = {1: "Jordan Lee", 2: "Riley Park"}
 
 
 def _add_missing_columns(engine, table, columns):

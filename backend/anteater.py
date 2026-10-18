@@ -8,7 +8,7 @@ import json
 import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 BASE_URL = "https://anteaterapi.com/v2/rest"
 TIMEOUT_SECONDS = 5
@@ -38,7 +38,9 @@ def _get(path, **params):
         return cached[1]
 
     try:
-        with urlopen(url, timeout=TIMEOUT_SECONDS) as response:
+        # Anteater refuses Python's default user agent (403), so name ourselves.
+        request = Request(url, headers={"User-Agent": "zot-hours/1.0 (ZotHacks 2026)"})
+        with urlopen(request, timeout=TIMEOUT_SECONDS) as response:
             body = json.load(response)
     except HTTPError as error:
         if error.code == 404:

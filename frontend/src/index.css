@@ -1,22 +1,73 @@
-:root, [data-theme='dark'] {
-  --bg: #0f1117; --card: #171a23; --card2: #1e2230; --line: #2a2f3f;
-  --text: #f3f1ea; --muted: #9aa1b4; --blue: #2d62e0; --blue-text: #7fa3ff;
-  --yellow: #ffd04d; --yellow-soft: rgba(255, 208, 77, 0.12); --on-yellow: #3b2f05;
+/* zot hours: Ticket Wallet.
+   Carrier navy ink, coupon-white stock on a cool pale-blue ground, one yellow accent,
+   flat pastel category bands. Barlow for UI, Barlow Condensed for numbers and heads. */
+
+:root, [data-theme='light'] {
+  color-scheme: light;
+  --ground: #eaeff7;        /* cool pale blue, never cream */
+  --stock: #ffffff;         /* coupon stock */
+  --stock-2: #f4f7fc;       /* filled fields on a ticket */
+  --ink: #14213d;           /* carrier navy */
+  --ink-2: #3a4763;
+  --muted: #536079;         /* 6:1 on stock */
+  --rule: #cdd6e5;          /* hairlines */
+  --line: #7c88a1;          /* field and control borders, 3.3:1 */
+  --band: #14213d;          /* header band */
+  --on-band: #ffffff;
+  --on-band-2: #c9d2e6;
+  --yellow: #ffcd3c;
+  --on-yellow: #14213d;
+  --solid: #14213d;         /* navy button */
+  --on-solid: #ffffff;
+  --focus: #2457d6;
+  --bad: #b42318;
+  /* category / class pastels: flat fields, navy text */
+  --p0: #ded6fb; --p1: #cfeedd; --p2: #d3e3ff; --p3: #ffdccb; --p4: #fff0b3; --p5: #fbd3e2;
+  --p0-ink: #5b45c4; --p1-ink: #1f7a52; --p2-ink: #2457d6; --p3-ink: #b5491f; --p4-ink: #8a6a00; --p5-ink: #b3306b;
 }
-[data-theme='light'] {
-  --bg: #faf7f0; --card: #ffffff; --card2: #f3efe4; --line: #e9e4d6;
-  --text: #14161c; --muted: #6b6f7d; --blue: #2457c5; --blue-text: #2457c5;
-  --yellow: #ffd04d; --yellow-soft: #fff0c2; --on-yellow: #3b2f05;
+
+[data-theme='dark'] {
+  color-scheme: dark;
+  --ground: #0a1120;
+  --stock: #131d33;
+  --stock-2: #1a2640;
+  --ink: #edf1f9;
+  --ink-2: #c3cce0;
+  --muted: #9da9c2;
+  --rule: #26324d;
+  --line: #66759a;
+  --band: #14213d;
+  --on-band: #ffffff;
+  --on-band-2: #b9c4dc;
+  --yellow: #ffcd3c;
+  --on-yellow: #14213d;
+  --solid: #edf1f9;
+  --on-solid: #14213d;
+  --focus: #ffcd3c;
+  --bad: #ff8f85;
+  --p0: #342c5c; --p1: #1c4334; --p2: #1f3560; --p3: #55301f; --p4: #4d4014; --p5: #522339;
+  --p0-ink: #c9bcff; --p1-ink: #8fe0b8; --p2-ink: #a9c6ff; --p3-ink: #ffb595; --p4-ink: #ffdc6b; --p5-ink: #ffa8ca;
 }
+
 * { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
 body {
-  margin: 0; background: var(--bg); color: var(--text);
-  font: 16px/1.45 'Figtree', system-ui, sans-serif; -webkit-font-smoothing: antialiased;
+  margin: 0; background: var(--ground); color: var(--ink);
+  font: 16px/1.5 'Barlow', system-ui, sans-serif; font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  caret-color: var(--focus);
+  scrollbar-color: var(--line) var(--ground);
 }
+::selection { background: var(--yellow); color: var(--on-yellow); }
 h1, h2, h3, p { margin: 0; }
-h1 { font-size: clamp(30px, 4vw, 46px); font-weight: 800; letter-spacing: -0.03em; line-height: 1.08; }
-h2 { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
+h1, h2, h3 { font-family: 'Barlow Condensed', 'Barlow', sans-serif; font-weight: 700; letter-spacing: -0.005em; line-height: 1.05; text-wrap: balance; }
+h1 { font-size: clamp(38px, 3.6vw, 58px); }
+h2 { font-size: 26px; }
+h3 { font-size: 21px; }
 button, input, textarea, select { font: inherit; color: inherit; }
 button { cursor: pointer; }
-:focus-visible { outline: 2px solid var(--blue-text); outline-offset: 2px; }
-@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+a, .link { text-underline-offset: 4px; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; border-radius: 6px; }
+code { font-size: 0.9em; background: var(--stock-2); padding: 1px 6px; border-radius: 4px; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }

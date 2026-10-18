@@ -135,6 +135,34 @@ export async function loadEnrollment(crns) {
   })
   return { sections, failed }
 }
+// ---- Classes a student added themselves (Profile → Add a class) ----
+// Live: kept in the backend (/api/students/<id>/sections). Demo mode: the section codes are
+// kept in this browser and looked up on Anteater like the hardcoded ones.
+const addedKey = (id) => `zh.added.${id}`
+const localAdded = (id) => { try { return JSON.parse(localStorage.getItem(addedKey(id))) || [] } catch { return [] } }
+export async function getAddedSections(studentId) {
+  if (live) return http(`/students/${studentId}/sections`)
+  const codes = localAdded(studentId)
+  return codes.length ? (await loadEnrollment(codes)).sections : []
+}
+export async function addSection(studentId, code) {
+  if (live) return http(`/students/${studentId}/sections`, { method: 'POST', body: { section_code: code } })
+  if (!/^\d{5}$/.test(code)) throw new Error('section_code must be 5 digits, e.g. 34190')
+  const { sections, failed } = await loadEnrollment([code])
+  if (!sections.length) throw new Error(failed[0] || `no section ${code}`)
+  localStorage.setItem(addedKey(studentId), JSON.stringify([...new Set([...localAdded(studentId), code])]))
+  return sections[0]
+}
+export async function removeSection(studentId, code) {
+  if (live) {
+    // 204 has no body, so this one skips http()'s JSON parsing.
+    const res = await fetch(`${BASE}/students/${studentId}/sections/${code}`, { method: 'DELETE' })
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`)
+    return
+  }
+  localStorage.setItem(addedKey(studentId), JSON.stringify(localAdded(studentId).filter((c) => c !== code)))
+}
+
 // Group a student's sections into classes: [{ course, title, sections: [...] }].
 export function classesOf(sections) {
   const map = new Map()
