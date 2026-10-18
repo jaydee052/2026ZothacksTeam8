@@ -10,13 +10,15 @@ from pins import pin_at
 from priority import score
 
 
-def add_to_bucket(db, bucket, student_name, class_section, question):
+def add_to_bucket(db, bucket, student_name, class_section, question, embedding=None):
     """Add a student to an open bucket. Returns their new ticket (flushed, not committed).
 
     The student takes on the bucket's category and its place in line. Joining a
     bucket from before the session started keeps the student with that group.
+    embedding is the question's stored vector, if it has one already.
     """
     ticket = Ticket(
+        embedding=embedding,
         student_name=student_name,
         class_section=class_section,
         question=question or bucket.title,

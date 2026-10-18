@@ -386,7 +386,8 @@ function Student({ queue, groups, cats, hours, act, live, ready, me, course, go 
   const colorOf = useContext(Colors)
   const [mine, setMine] = useStored('zh.mine2', [])
   const [q, setQ] = useState('')
-  const [type, setType] = useState('understanding_topic')
+  // Students don't pick a category; a new question gets the default (same as the backend).
+  const type = api.DEFAULT_CAT
   const [confirm, setConfirm] = useState(false)
   const [remote, setRemote] = useState([])
   const n = q.trim() ? q.trim().split(/\s+/).length : 0
@@ -404,10 +405,10 @@ function Student({ queue, groups, cats, hours, act, live, ready, me, course, go 
     if (!live || n < 2) { setRemote([]); return }
     let stale = false
     const t = setTimeout(async () => {
-      try { const r = await api.suggest(q.trim(), type, hours?.id); if (!stale) setRemote(r || []) } catch { if (!stale) setRemote([]) }
+      try { const r = await api.suggest(q.trim(), null, hours?.id); if (!stale) setRemote(r || []) } catch { if (!stale) setRemote([]) }
     }, 350)
     return () => { stale = true; clearTimeout(t) }
-  }, [q, type, live, hours?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [q, live, hours?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Demo: a simple word-overlap guess over the local queue.
   let similar = null
@@ -417,7 +418,7 @@ function Student({ queue, groups, cats, hours, act, live, ready, me, course, go 
   } else {
     const w = new Set(words(q))
     if (w.size >= 2) {
-      const g = groups.find((x) => !x.tickets.some(isMine) && words(x.title).filter((y) => w.has(y)).length >= 1 && x.tickets[0].question_type === type)
+      const g = groups.find((x) => !x.tickets.some(isMine) && words(x.title).filter((y) => w.has(y)).length >= 1)
       if (g) similar = { id: g.id, title: g.title, count: g.tickets.length }
     }
   }
@@ -442,7 +443,7 @@ function Student({ queue, groups, cats, hours, act, live, ready, me, course, go 
   const submit = (bucket_id) => {
     setConfirm(false)
     return act(async () => {
-      const t = await api.join({ student_name: me.name.trim(), class_section: me.section.trim(), question: q.trim(), question_type: type, bucket_id, office_hours_id: hours?.id })
+      const t = await api.join({ student_name: me.name.trim(), class_section: me.section.trim(), question: q.trim(), bucket_id, office_hours_id: hours?.id })
       setMine((m) => [...m, { id: t.id, name: me.name.trim() }]); setQ('')
     }, 'Saved. Your spot is in the line.')
   }
@@ -489,11 +490,6 @@ function Student({ queue, groups, cats, hours, act, live, ready, me, course, go 
                 <textarea rows={3} value={q} onChange={(e) => setQ(e.target.value)} placeholder="My recursive flatten() returns None for nested lists, but works for flat ones." />
               </label>
               <div className={`count ${over ? 'bad' : ''}`}>{n}/25 words{over && ' · shorten it a little'}</div>
-              <div className="chips" role="radiogroup" aria-label="Question type">
-                {Object.entries(cats).map(([id, cat]) => (
-                  <button key={id} role="radio" aria-checked={type === id} className={type === id ? 'chip on' : 'chip'} onClick={() => setType(id)}>{cat.label}</button>
-                ))}
-              </div>
               <p className="muted small-note">Asking as {me.name.trim() || 'nobody yet'}{me.section.trim() && `, ${me.section.trim()}`}.</p>
             </div>
             {similar && (

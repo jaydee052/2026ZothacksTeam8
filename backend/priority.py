@@ -24,6 +24,10 @@ CATEGORIES = {
 # Used for old tickets whose category is no longer in the list.
 FALLBACK_CATEGORY = "quick_qa"
 
+# Students don't pick a category. A question that starts a new group gets this
+# one; middle of the range, so it's neither rushed nor pushed back.
+DEFAULT_CATEGORY = "understanding_topic"
+
 COMPLEXITY_WEIGHT = 3
 STUDENT_WEIGHT = 5
 

@@ -5,9 +5,10 @@ from sqlalchemy import func, select
 from bucket_rules import add_to_bucket, sync_bucket_status
 from pins import leaving_line
 from db import create_bucket, get_db
-from embeddings import closest_bucket, embed
+from classify import classify
+from embeddings import closest_bucket, embed, to_json
 from models import Bucket, OfficeHours, Ticket
-from priority import score
+from priority import DEFAULT_CATEGORY, score
 from queue_order import get_ticket, session_line
 from sessions import has_started, pick_session
 from validation import category_error, clean, question_error, status_error
@@ -57,11 +58,13 @@ def join_queue():
     name = clean(data.get("student_name"))
     section = clean(data.get("class_section"))
     question = clean(data.get("question"))
+    # Students don't pick a category. A question that joins a group takes the
+    # group's; a new group is classified by Gemini (a professor can still change it).
     question_type = clean(data.get("question_type")).lower()
 
     if not name or not section:
         return jsonify({"error": "student_name and class_section are required"}), 400
-    error = question_error(question) or category_error(question_type)
+    error = question_error(question) or (question_type and category_error(question_type))
     if error:
         return jsonify({"error": error}), 400
 
@@ -73,19 +76,22 @@ def join_queue():
         # Questions submitted after the session starts go to the back of the line.
         late = has_started(session)
 
-        # The question joins the open bucket closest in meaning, if one is close
-        # enough (see embeddings.py). Otherwise it starts its own bucket that
-        # other students can join.
+        # The question joins the bucket of the waiting question closest in meaning,
+        # in any category, if one is close enough (see embeddings.py). Otherwise
+        # it starts its own bucket that other students can join.
         vector = embed(question)
         bucket, match = (None, 0.0)
         if vector is not None:
-            bucket, match = closest_bucket(db, question, vector, question_type, session.id)
+            bucket, match = closest_bucket(db, question, vector, session.id)
 
         if bucket is not None:
-            ticket = add_to_bucket(db, bucket, name, section, question)
+            ticket = add_to_bucket(db, bucket, name, section, question, to_json(vector))
         else:
-            bucket = create_bucket(db, question, question_type, session.id, late, vector)
+            # Only new groups are classified, so joining a group never waits on Gemini.
+            question_type = question_type or classify(question) or DEFAULT_CATEGORY
+            bucket = create_bucket(db, question, question_type, session.id, late)
             ticket = Ticket(
+                embedding=to_json(vector),
                 student_name=name,
                 class_section=section,
                 question=question,
@@ -148,6 +154,8 @@ def update_ticket(ticket_id):
             leaving_line(db, [ticket])  # pins behind them move up; theirs is cleared
         for key, value in updates.items():
             setattr(ticket, key, value)
+        if "question" in updates:
+            ticket.embedding = None  # re-embedded the next time questions are matched
         db.flush()
 
         # A new category means a different kind of question than the rest of the

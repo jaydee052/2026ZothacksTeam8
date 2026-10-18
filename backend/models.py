@@ -12,8 +12,12 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 class Base(DeclarativeBase):
     def to_dict(self):
-        """Every column as a plain dict, ready for jsonify."""
-        return {column.key: getattr(self, column.key) for column in self.__table__.columns}
+        """Every column as a plain dict, ready for jsonify. Leaves out embeddings
+        (hundreds of numbers nobody reads)."""
+        return {
+            column.key: getattr(self, column.key)
+            for column in self.__table__.columns if column.key != "embedding"
+        }
 
 
 class OfficeHours(Base):
@@ -44,15 +48,6 @@ class Bucket(Base):
     office_hours_id: Mapped[Optional[int]] = mapped_column(ForeignKey("office_hours.id"))
     overflow_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     late: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    # The founding question's meaning as a JSON list of numbers (see embeddings.py).
-    embedding: Mapped[Optional[str]] = mapped_column(String, deferred=True)
-
-    def to_dict(self):
-        """Like Base.to_dict, minus the embedding (hundreds of numbers nobody reads)."""
-        return {
-            column.key: getattr(self, column.key)
-            for column in self.__table__.columns if column.key != "embedding"
-        }
 
 
 class Ticket(Base):
@@ -78,6 +73,8 @@ class Ticket(Base):
     late: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # Set when the professor pins this student to a spot in line (1 = first).
     pinned_position: Mapped[Optional[int]] = mapped_column(Integer)
+    # The question's meaning as a JSON list of numbers, for grouping (see embeddings.py).
+    embedding: Mapped[Optional[str]] = mapped_column(String, deferred=True)
 
 
 class Syllabus(Base):

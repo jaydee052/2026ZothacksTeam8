@@ -10,6 +10,8 @@ export const CATS = {
   research: { label: 'Research', base_time: 15, complexity: 5 },
   personal: { label: 'Personal', base_time: 10, complexity: 3 },
 }
+// Students don't pick a category; new questions get this one (DEFAULT_CATEGORY in priority.py).
+export const DEFAULT_CAT = 'understanding_topic'
 // Same formula as priority.py: (base + complexity*3 + students*5) * 2^overflow
 // Lateness isn't part of the score. Late questions keep their real score but wait in
 // a separate late section at the back, in the order they arrived (see serveOrder).
@@ -203,7 +205,7 @@ export async function join(p) {
   const buddy = p.bucket_id != null ? s.tickets.find((t) => t.bucket_id === p.bucket_id) : null
   s.tickets.push({
     id, office_hours_id: session.id, student_name: p.student_name, class_section: p.class_section, question: p.question ?? buddy?.question,
-    question_type: buddy ? buddy.question_type : p.question_type, status: 'waiting', created_at: new Date().toISOString(),
+    question_type: buddy ? buddy.question_type : p.question_type ?? DEFAULT_CAT, status: 'waiting', created_at: new Date().toISOString(),
     bucket_id: p.bucket_id ?? id, overflow_count: buddy ? buddy.overflow_count : 0, manually_changed: false, priority: 0,
     late: buddy ? buddy.late : stateOf(session) === 'running', pinned_position: buddy ? buddy.pinned_position ?? null : null,
   })

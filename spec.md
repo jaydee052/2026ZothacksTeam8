@@ -70,7 +70,7 @@ A priority queue app for office hours. Students line up their questions ahead of
 - **Profile:** name and section, filled in from the demo account and editable.
 - **The line:** each group's question, how many students are in it, and roughly how long it takes. Names aren't shown to other students. The student's own group is highlighted.
 - **Joining:** a **"Same question?" Join** button on every question in the line. Joining a group keeps the group's place in line, even after the session has started.
-- **Asking:** name, section, question (25 words max) and category. While typing, the app may suggest a similar open question to join instead. Submitting to a session that has already started asks for confirmation first, since the question will go to the back.
+- **Asking:** name, section and question (25 words max). No category; see "Groups and Similar Questions". While typing, the app may suggest a similar open question to join instead. Submitting to a session that has already started asks for confirmation first, since the question will go to the back.
 - **Your spot:** place in line, **"Your turn: about 6:20 PM"**, how many classmates share the question, and a note if they joined late.
 - **Done:** "Fixed it, thanks" (helped) or "Leave the line" (left without help).
 
@@ -90,8 +90,7 @@ A priority queue app for office hours. Students line up their questions ahead of
 1. Student name
 2. Class section
 3. Question (25-word limit)
-4. Question category
-5. Optionally, the session to join. Without it, the question goes to the session that's running now, or else the next upcoming one.
+4. Optionally, the session to join. Without it, the question goes to the session that's running now, or else the next upcoming one.
 
 ## Categories
 
@@ -171,7 +170,8 @@ Each student's "Your spot" card shows roughly when their turn will be: **"Your t
 ## Groups and Similar Questions
 
 - Every new question starts its own group (a "bucket"). Students with the same question join that group instead of asking again.
-- **Automatic grouping (AI):** when a question is submitted, the backend sends it to Google's `gemini-embedding-001` model, which returns a vector describing what it means. If an open group in the same session and category has a vector at least 0.88 alike (cosine similarity), the student joins that group automatically. Otherwise the question starts a new group, and its vector is saved on the group. The rule checks below (different assignment number, different kind of ask, etc.) can still veto a match. Needs `GEMINI_API_KEY` in `backend/.env`; without it, every question starts its own group as before. Set in `backend/embeddings.py`.
+- **Automatic grouping (AI):** when a question is submitted, the backend sends it to Google's `gemini-embedding-001` model, which returns a vector describing what it means. The vector is saved on the student's ticket. The new question is compared to every waiting student's question in the same session, in any category. If the closest one is at least 0.88 alike (cosine similarity), the student joins that student's group automatically. Otherwise the question starts a new group. Comparing against every member, not just the first, means a group can be found by any of the ways it's been asked. The rule checks below (different assignment number, different kind of ask, etc.) can still veto a match, checked against everyone in the group. Questions without a vector yet (sample questions, older tickets) get one in a single batch request the next time questions are matched. Needs `GEMINI_API_KEY` and `USE_AI_GROUPING=1` in `backend/.env`; without them, every question starts its own group as before. Set in `backend/embeddings.py`.
+- **Students don't pick a category.** A student who joins a group takes the group's category. A question that starts a new group is classified by Gemini (`gemini-3.5-flash-lite`, about 0.5 seconds; 18 of 18 test questions right), in `backend/classify.py`. Joining a group never waits on this. If there's no key, Gemini is rate limited or slow (5-second limit), or it answers with something that isn't a category, the group gets the default, Understanding Topic (`DEFAULT_CATEGORY` in `backend/priority.py`). Categories still drive the score and block planning, and a professor can still change a question's category.
 - A group is answered together, so a bigger group scores higher (Students × 5) and saves the professor time.
 - A group closes when nobody in it is still waiting, and reopens if a student is put back in line.
 - If a student's category changes and they share a group, they move to a group of their own.

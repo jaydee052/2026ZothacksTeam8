@@ -7,7 +7,6 @@ Use it in an endpoint like this:
         ...
         db.commit()
 """
-import json
 import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -63,11 +62,11 @@ def init_db():
         "manually_changed": "INTEGER NOT NULL DEFAULT 0",
         "late": "INTEGER NOT NULL DEFAULT 0",
         "pinned_position": "INTEGER",
+        "embedding": "TEXT",
     })
     _add_missing_columns(engine, "buckets", {
         "overflow_count": "INTEGER NOT NULL DEFAULT 0",
         "late": "INTEGER NOT NULL DEFAULT 0",
-        "embedding": "TEXT",
     })
     _add_missing_columns(engine, "office_hours", {
         "closed_at": "TEXT",
@@ -121,18 +120,14 @@ def _add_sample_data(db):
     top_up(db, session)
 
 
-def create_bucket(db, title, question_type, office_hours_id, late=False, embedding=None):
-    """Start a new bucket from a student's question. Returns the new bucket.
-
-    embedding is the question's vector from embeddings.embed(), if there is one.
-    """
+def create_bucket(db, title, question_type, office_hours_id, late=False):
+    """Start a new bucket from a student's question. Returns the new bucket."""
     bucket = Bucket(
         title=title,
         question_type=question_type,
         priority=score(question_type),
         office_hours_id=office_hours_id,
         late=late,
-        embedding=json.dumps(embedding) if embedding else None,
     )
     db.add(bucket)
     db.flush()  # gives the bucket its id
