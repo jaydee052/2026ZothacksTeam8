@@ -46,6 +46,7 @@ Feature details are in [spec.md](spec.md).
   source venv/bin/activate
   pip install -r requirements.txt
   ```
+- **AI grouping (optional):** copy `backend/.env.example` to `backend/.env` (`./dev.sh` does this for you), set your own `GEMINI_API_KEY` from https://aistudio.google.com/apikey, and set `USE_AI_GROUPING=1`. Check it with `cd backend && python tests/check_ai_setup.py`. `backend/.env` is ignored by git, so never commit keys anywhere else. Without a key, everything works with rule-based matching. http://localhost:5001/api/health shows whether AI is on.
 - After pulling backend changes, run `pip install -r requirements.txt` again (with the venv active) in case new packages were added.
 - Backend, every time: `cd backend && source venv/bin/activate && python app.py` (runs on http://localhost:5001; check http://localhost:5001/api/health)
 - The backend has no web page of its own. A blank or "Not Found" page at http://localhost:5001 is normal.
@@ -91,7 +92,7 @@ Base URL: `http://localhost:5001`. Every endpoint returns JSON. When something g
 | POST | `/api/professors` | `{ucinetid}` (e.g. `"mikes"`) | Profile and `courses` (201), looked up on the Anteater API and saved. 404 if no such instructor, 502 if Anteater is down. |
 | GET | `/api/professors/<ucinetid>` | — | The saved profile and `courses`. 404 until the professor has signed in with `POST /api/professors`. |
 
-**Ticket fields:** `id`, `student_name`, `class_section`, `question`, `question_type`, `priority`, `status` (`waiting` / `done`), `bucket_id`, `student_count`, `overflow_count`, `manually_changed`, `late`, `in_late_section`, `pinned_position`, `office_hours_id`, `created_at`, `position`
+**Ticket fields:** `block`, `eta_minutes`, `id`, `student_name`, `class_section`, `question`, `question_type`, `priority`, `status` (`waiting` / `done`), `bucket_id`, `student_count`, `overflow_count`, `manually_changed`, `late`, `in_late_section`, `pinned_position`, `office_hours_id`, `created_at`, `position`
 
 `position` is the ticket's place in its own session's line, starting at 1, or `null` once it's no longer waiting. Joining the queue or a bucket returns it right away, so the student can see "you are #N".
 
@@ -99,7 +100,7 @@ Base URL: `http://localhost:5001`. Every endpoint returns JSON. When something g
 
 **How the line works:**
 - A session has started once the professor presses Open or its start time passes, whichever comes first.
-- The line has two sections. The main line holds on-time questions, ranked by `(Base Time + Complex × 3 + Students × 5) × Overflow`.
+- The line has two sections. The main line holds on-time questions, planned in 15-minute blocks: up to 2 long questions (Understanding Topic, Research, Personal) per block, highest score first, then short questions by score, each one that fits. Score is `(Base Time + Complex × 3 + Students × 5) × Overflow`. `block` says which block a student is in, and `eta_minutes` is a rough wait.
 - Questions submitted after the start have `late: true` and `in_late_section: true`. They go to the back, in the order they arrived. Their `priority` is still their real score, but it doesn't change their order.
 - Bumping a late question up moves it into the main line (`in_late_section` becomes false). Bumping it down returns 409.
 - When a session closes, waiting students move to the next session, are no longer late, and have their score doubled. Pins are cleared.
@@ -131,6 +132,7 @@ Start with the first item; the classes and color items build on it.
 - [ ] 6. Professor: drag and drop to reorder the line, replacing the up/down arrows (backend ready: `POST /api/buckets/<id>/pin`)
 - [ ] 7. Professor: show names as "Jordan + 5 others", with the full list on hover
 - [ ] 8. Color code each class on the class pages and the professor page
+- [ ] 9. Time blocks: show block dividers on the professor view (`block`), and use `eta_minutes` for "about N minutes" instead of adding up minutes on the screen. Update the "You'd be Nth in line" estimate, which still assumes a plain score order.
 
 ### Files
 | File | What it does |
@@ -262,6 +264,8 @@ The backend's late rule changed after these screens were written. Late questions
 - [x] Return the member list in each bucket for the professor view
 - [x] Tune similar-question matching: 145 labeled question pairs in `tests/similarity_cases.py`; run `python tests/check_similarity.py` to measure. Now 143/145 with no wrong matches (was 78/105 with 19 wrong on the first 105).
 - [ ] Add real student questions to `tests/similarity_cases.py` once the app is used, and re-check
+- [x] Time-block planning: the main line is planned in 15-minute blocks, up to 2 long questions each, then short ones by score (`blocks.py`, `queue_order.py`). Each ticket has `block` and `eta_minutes`.
+- [ ] Confirm the minutes per category; block planning depends on them
 - [x] Pin a whole group in one call for drag and drop: `POST /api/buckets/<id>/pin` (`routes/buckets/pin_bucket.py`, `pins.py`). Pinned groups stay together, and pins move up as people ahead are helped.
 
 ### Office hours

@@ -14,7 +14,7 @@
 .ghost:hover { background: var(--card); }
 
 .grid { display: grid; gap: 28px; align-items: start; padding-top: 12px; }
-.grid.student { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); }
+.grid.student { grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); }
 .grid.pro { grid-template-columns: minmax(0, 1fr) 340px; }
 .stack { display: grid; gap: 18px; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 22px; }
@@ -96,3 +96,54 @@ input:focus, textarea:focus { border-color: var(--blue-text); outline: none; }
 .rows .divider { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 13px; font-weight: 500; padding: 4px 4px; }
 .rows .divider::before, .rows .divider::after { content: ''; flex: 1; height: 1px; background: var(--line); }
 .fine.left { text-align: left; margin-top: 0; }
+
+/* ---- Class colors: six fixed hues. Text and tints are mixed per theme so they stay readable. ---- */
+.cc-0 { --cc: #5b6cf0; } .cc-1 { --cc: #14a58f; } .cc-2 { --cc: #e8654a; }
+.cc-3 { --cc: #a35de0; } .cc-4 { --cc: #d99a00; } .cc-5 { --cc: #d94f93; }
+.cc { --cc-soft: color-mix(in srgb, var(--cc) 20%, transparent); --cc-text: color-mix(in srgb, var(--cc) 45%, white); }
+[data-theme='light'] .cc { --cc-text: color-mix(in srgb, var(--cc) 55%, black); }
+.ctag { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; padding: 3px 10px 3px 8px; border-radius: 999px; background: var(--cc-soft); color: var(--cc-text); }
+.ctag i, .pill.tinted i { width: 8px; height: 8px; border-radius: 50%; background: var(--cc); }
+.pill.tinted { background: var(--cc-soft); color: var(--cc-text); }
+.pill.tinted.closed { background: var(--card2); color: var(--muted); }
+.band { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 14px 18px; border-radius: 16px; background: var(--cc-soft); border-left: 6px solid var(--cc); }
+.band h2 { color: var(--cc-text); }
+.band span { color: var(--muted); font-size: 14px; }
+.cchip { display: inline-flex; border: 1px solid var(--line); background: none; border-radius: 999px; padding: 3px; }
+.cchip .ctag { background: none; font-size: 14px; }
+.cchip.on { border-color: var(--cc); background: var(--cc-soft); }
+.next .ctag { background: rgba(255, 255, 255, 0.92); color: #14161c; }
+
+/* ---- Navigation, class pages ---- */
+.ghost[aria-current='page'] { background: var(--card2); border-color: var(--muted); }
+.narrow { max-width: 640px; }
+.grow { flex: 1; min-width: 0; display: grid; gap: 6px; justify-items: start; }
+.small-note { font-size: 13px; margin: 4px 0 0; }
+.link.inline { display: inline; justify-self: auto; }
+
+/* ---- Student: join a group from the line ---- */
+.list li > div:not(.joinbox) { flex: 1; min-width: 0; }
+.joinbox { display: flex; align-items: center; gap: 8px; flex: none; }
+.joinbox span { font-size: 12px; color: var(--muted); }
+.btn.small { padding: 6px 14px; font-size: 14px; }
+
+/* ---- Professor: drag handle, drop line, names, pinned badge ---- */
+.grip { flex: none; width: 34px; height: 34px; border-radius: 10px; border: 1px solid var(--line); background: none; cursor: grab; touch-action: none; user-select: none; letter-spacing: -3px; line-height: 1; font-weight: 800; }
+.grip:active { cursor: grabbing; }
+.grip:hover { background: var(--card2); }
+.next .grip { border-color: rgba(255, 255, 255, 0.55); color: #fff; }
+.next .grip:hover { background: rgba(255, 255, 255, 0.16); }
+.dragging { opacity: 0.45; }
+.drop-before { box-shadow: 0 -4px 0 -1px var(--blue-text); }
+.drop-after { box-shadow: 0 4px 0 -1px var(--blue-text); }
+.names { background: none; border: 0; padding: 0; color: inherit; font: inherit; text-decoration: underline dotted; text-underline-offset: 3px; cursor: pointer; }
+.namelist { opacity: 0.9; }
+.badge { display: inline-block; font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--yellow-soft); color: var(--yellow); }
+[data-theme='light'] .badge { color: #7a5b00; }
+.next .link { color: #fff; opacity: 0.9; }
+
+/* ---- Student layout: the line on the left, the class column on the right ---- */
+.grid.student > aside { order: -1; }
+@media (max-width: 900px) { .grid.student > aside { order: 0; } }
+/* The line scrolls on its own; the rest of the page scrolls as usual. */
+.list.scroll { max-height: max(240px, calc(100vh - 300px)); overflow-y: auto; overscroll-behavior: contain; padding-right: 4px; }

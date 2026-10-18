@@ -1,6 +1,6 @@
 // Talks to the Flask API. If the backend isn't running, falls back to a local
 // demo store (localStorage) so the UI is fully usable on its own.
-const BASE = import.meta.env.VITE_API_URL || 'http://localhost:5001/api'
+import { API_BASE as BASE } from './config.js'
 
 export const CATS = {
   quick_qa: { label: 'Quick Q&A', base_time: 2, complexity: 1 },
@@ -42,7 +42,7 @@ const seed = () => {
   const mk = (id, name, sec, q, type, bucket) => ({
     id, student_name: name, class_section: sec, question: q, question_type: type,
     status: 'waiting', created_at: new Date(Date.now() - (10 - id) * 60000).toISOString(),
-    bucket_id: bucket, overflow_count: 0, manually_changed: false, priority: 0, late: false,
+    bucket_id: bucket, overflow_count: 0, manually_changed: false, priority: 0, late: false, pinned_position: null,
   })
   return {
     next: 10,
@@ -102,16 +102,16 @@ export async function join(p) {
     // the page is showing.
     return bucket_id
       ? http(`/buckets/${bucket_id}/join`, { method: 'POST', body })
-      : http('/queue', { method: 'POST', body: { ...body, office_hours_id: hoursId ?? undefined } })
+      : http('/queue', { method: 'POST', body: { ...body, office_hours_id: body.office_hours_id ?? hoursId ?? undefined } })
   }
   const s = load(), id = s.next++
   // A student joining a group takes on that group's category and lateness, same as the backend.
   const buddy = p.bucket_id != null ? s.tickets.find((t) => t.bucket_id === p.bucket_id) : null
   s.tickets.push({
-    id, student_name: p.student_name, class_section: p.class_section, question: p.question,
+    id, student_name: p.student_name, class_section: p.class_section, question: p.question ?? buddy?.question,
     question_type: buddy ? buddy.question_type : p.question_type, status: 'waiting', created_at: new Date().toISOString(),
     bucket_id: p.bucket_id ?? id, overflow_count: buddy ? buddy.overflow_count : 0, manually_changed: false, priority: 0,
-    late: buddy ? buddy.late : stateOf(s.hours) === 'running',
+    late: buddy ? buddy.late : stateOf(s.hours) === 'running', pinned_position: buddy ? buddy.pinned_position ?? null : null,
   })
   save(s); return { id, student_name: p.student_name }
 }
@@ -142,23 +142,47 @@ export async function resolveGroup(bucketId, tickets) {
   }
   await Promise.all(tickets.map((t) => update(t.id, { status: 'done' })))
 }
-export async function bump(id, direction) {
-  if (live) return http(`/queue/${id}/bump`, { method: 'POST', body: { direction } })
-  const s = load(), t = decorate(s.tickets).find((x) => x.id === id)
-  const raw = s.tickets.find((x) => x.id === id)
-  // Same rule as the backend: a late question can be moved up into the main line,
-  // but not down, since it's already at the back.
-  if (t?.in_late_section && direction === 'down') throw new Error('this question is already in the late section at the back of the line')
-  if (t && raw) { raw.priority = t.priority + (direction === 'up' ? 15 : -15); raw.manually_changed = true }
+// Student leaves the line without being helped (status "left").
+export async function leave(id) {
+  if (live) return http(`/queue/${id}/leave`, { method: 'POST' })
+  return update(id, { status: 'left' })
+}
+// Professor drags a group to a spot (1 = top, counted in groups), or unpins it with null.
+// Live: POST /buckets/:id/pin {group_position}
+export async function pinGroup(bucketId, position) {
+  if (live) return http(`/buckets/${bucketId}/pin`, { method: 'POST', body: { group_position: position } })
+  const s = load()
+  const groups = []
+  decorate(s.tickets).forEach((t) => {
+    let g = groups.find((x) => x.id === t.bucket_id)
+    if (!g) groups.push((g = { id: t.bucket_id, pri: t.priority }))
+  })
+  const from = groups.findIndex((g) => g.id === bucketId)
+  if (from < 0) return
+  const [g] = groups.splice(from, 1)
+  const mine = s.tickets.filter((t) => t.bucket_id === bucketId && t.status === 'waiting')
+  if (position == null) { mine.forEach((t) => { t.pinned_position = null }); return save(s) }
+  const at = Math.min(Math.max(position, 1), groups.length + 1) - 1
+  const above = groups[at - 1], below = groups[at]
+  // Demo shortcut: give the group a score between its new neighbours.
+  const pri = above && below ? (above.pri > below.pri ? (above.pri + below.pri) / 2 : below.pri + 0.001) : above ? above.pri - 1 : below ? below.pri + 1 : g.pri
+  mine.forEach((t) => { t.priority = pri; t.manually_changed = true; t.pinned_position = position })
   save(s)
 }
 // ---- office hours ----
 // Live: GET /office_hours, POST /office_hours, PATCH /office_hours/:id, POST /office_hours/:id/open|close
 let hoursId = null
-export async function getHours() {
-  if (!live) { const h = load().hours; return { ...h, state: stateOf(h), has_next: false } }
-  const all = await http('/office_hours') // earliest first; each has state: upcoming | running | closed
-  const h = all.find((x) => x.state === 'running') || all.find((x) => x.state === 'upcoming') || all[all.length - 1] || null
+export async function getSessions() {
+  if (!live) { const h = load().hours; return [{ ...h, state: stateOf(h) }] }
+  return http('/office_hours') // earliest first; each has state: upcoming | running | closed
+}
+// The session a class page shows: running, else the next upcoming one, else the latest.
+export function bestSession(all, course) {
+  const mine = course ? all.filter((x) => x.course === course) : all
+  return mine.find((x) => x.state === 'running') || mine.find((x) => x.state === 'upcoming') || mine[mine.length - 1] || null
+}
+export function pickHours(all, course) {
+  const h = bestSession(all, course)
   hoursId = h ? h.id : null
   if (!h) return null
   // Is there a later session of this course to push waiting students into when this one closes?

@@ -174,7 +174,18 @@ Being on time is a yes/no that picks your section. It isn't part of the score,
 so a late question still shows its real score; it just doesn't move you ahead
 of anyone in the late section.
 
-**The score** (used to order the main line):
+**Time blocks** (how the main line is ordered): the main line is planned in
+15-minute blocks. Each block gets up to 2 long questions (Understanding Topic,
+Research, Personal), highest score first, then is filled with short questions
+(Quick Q&A, Grading, Scheduling) by score, each one that fits.
+
+```
+Block 1:  [Research 15m]
+Block 2:  [Understanding Topic 10m][Grading 5m]
+Block 3:  [Personal 10m][Scheduling 3m][Quick Q&A 2m]
+```
+
+**The score** (decides which long and which short questions come first):
 
 ```
    score = ( Time  +  Difficulty x 3  +  Students x 5 )  x  Moved
@@ -220,7 +231,8 @@ backend/
   models.py               what's stored: sessions, groups, tickets
   db.py                   opens the database, adds sample data
   priority.py             the score formula and question categories
-  queue_order.py          sorts the line, places pinned students, numbers each spot (#1, #2...)
+  blocks.py               plans the main line in 15-minute blocks (long + short questions)
+  queue_order.py          builds the line: blocks, late section, pins, numbers each spot
   overflow.py             moving waiting students on: closing, auto-closing, stranded students
   sessions.py             upcoming / running / closed, and which session a question joins
   similarity.py           decides if two questions are "the same question"

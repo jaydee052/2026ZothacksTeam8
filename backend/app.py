@@ -1,8 +1,11 @@
 import os
+
+import config  # noqa: F401  (loads backend/.env first)
 from flask import Flask, request
 from flask_cors import CORS
 
 from db import get_db, init_db
+from llm import ai_status
 from overflow import close_expired_sessions
 from routes import (
     buckets,
@@ -50,7 +53,7 @@ def auto_close_finished_sessions():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True}
+    return {"ok": True, "ai": ai_status()}
 
 
 if __name__ == "__main__":

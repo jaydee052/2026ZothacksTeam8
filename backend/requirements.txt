@@ -1,3 +1,5 @@
 flask==3.1.2
 flask-cors==6.0.1
 sqlalchemy==2.0.54
+google-genai==2.28.0
+python-dotenv==1.2.4

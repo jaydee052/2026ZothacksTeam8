@@ -5,3 +5,9 @@ backend/uploads/
 .venv/
 venv/
 .DS_Store
+
+# Secrets: API keys live in .env files, which are never committed.
+# backend/.env.example (no secrets) is the template to copy.
+.env
+.env.*
+!.env.example

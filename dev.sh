@@ -48,6 +48,12 @@ if [ ! -f "$STAMP" ] || [ "$BACKEND/requirements.txt" -nt "$STAMP" ]; then
   touch "$STAMP"
 fi
 
+# Local settings (API keys). backend/.env is ignored by git.
+if [ ! -f "$BACKEND/.env" ] && [ -f "$BACKEND/.env.example" ]; then
+  cp "$BACKEND/.env.example" "$BACKEND/.env"
+  say "Created backend/.env from the example. Add your ANTHROPIC_API_KEY there to use AI grouping."
+fi
+
 # --- Frontend setup ---------------------------------------------------------
 
 if [ ! -d "$FRONTEND/node_modules" ] || [ "$FRONTEND/package.json" -nt "$FRONTEND/node_modules" ]; then
