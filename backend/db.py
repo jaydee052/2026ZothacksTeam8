@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from models import Base, Bucket, OfficeHours, Student, Ticket
 from priority import score
+from sample_questions import top_up, top_up_all
 
 DB_PATH = Path(__file__).parent / "office_hours.db"
 
@@ -86,6 +87,9 @@ def init_db():
             )
             ticket.bucket_id = bucket.id
 
+        # Any session with fewer than 4 groups waiting gets sample questions.
+        top_up_all(db)
+
         # Hardcoded demo student (id 1). Classes are added through
         # POST /api/students/1/sections, e.g. section code 34190 (COMPSCI 161).
         if db.scalar(select(func.count()).select_from(Student)) == 0:
@@ -106,7 +110,7 @@ def _add_sample_data(db):
     # Sample session starts an hour from now, so it's open for questions.
     start = datetime.now().replace(second=0, microsecond=0) + timedelta(hours=1)
     session = OfficeHours(
-        course="ICS 32",
+        course="I&C SCI 46",  # one of the demo professor's courses (frontend/src/config.js)
         location="ICS 2nd Floor Atrium",
         starts_at=start.isoformat(timespec="minutes"),
         ends_at=(start + timedelta(hours=2)).isoformat(timespec="minutes"),
@@ -114,22 +118,7 @@ def _add_sample_data(db):
     )
     db.add(session)
     db.flush()  # gives the session its id
-
-    seed = [
-        ("Alex", "Lec A", "Can you explain how recursion works?", "understanding_topic"),
-        ("Jordan", "Lec A", "When is the midterm?", "quick_qa"),
-        ("Sam", "Lec B", "Why did I lose points on assignment 3?", "grading"),
-    ]
-    for name, section, question, category in seed:
-        db.add(Ticket(
-            student_name=name,
-            class_section=section,
-            question=question,
-            question_type=category,
-            priority=score(category),
-            office_hours_id=session.id,
-        ))
-    db.flush()
+    top_up(db, session)
 
 
 def create_bucket(db, title, question_type, office_hours_id, late=False, embedding=None):

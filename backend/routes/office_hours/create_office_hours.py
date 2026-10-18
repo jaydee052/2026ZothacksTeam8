@@ -9,12 +9,15 @@ professor opens them (POST /api/office_hours/<id>/open) or the start time passes
 Refused (409) if it overlaps another open or upcoming session of the same course.
 Students left waiting on an earlier closed session of the course, with nowhere
 to go, move into the new session. "moved_in_count" says how many.
+A new session with fewer than 4 groups waiting is topped up with the sample
+questions in sample_questions.py.
 """
 from flask import jsonify, request
 
 from db import get_db
 from models import OfficeHours
 from overflow import rehome_stranded
+from sample_questions import top_up
 
 from . import bp
 from .fields import overlap_error, read_fields, session_to_dict
@@ -35,6 +38,7 @@ def create_office_hours():
         db.add(session)
         db.flush()  # gives the session its id
         moved_in = rehome_stranded(db, session.course)
+        top_up(db, session)
         db.commit()
 
         data = session_to_dict(session)
