@@ -198,7 +198,7 @@ export async function join(p) {
   }
   const s = load(), id = s.next++
   const session = s.sessions.find((x) => x.id === (p.office_hours_id ?? hoursId))
-  if (!session) throw new Error('There are no office hours to join.')
+  if (!session) throw new Error('No office hours to join.')
   // A student joining a group takes on that group's category and lateness, same as the backend.
   const buddy = p.bucket_id != null ? s.tickets.find((t) => t.bucket_id === p.bucket_id) : null
   s.tickets.push({
@@ -321,10 +321,10 @@ export async function wrapUp() {
       if (t.manually_changed) t.priority *= 2
     })
     h.is_open = false; h.closed_at = local(new Date()); save(s)
-    return next ? `Wrapped up. ${moved} waiting ${moved === 1 ? 'student' : 'students'} moved to the next session with a boost.` : 'Wrapped up.'
+    return next ? `Wrapped up · ${moved} moved to the next session.` : 'Wrapped up.'
   }
   const r = await http(`/office_hours/${hoursId}/close`, { method: 'POST' })
   if (r.warning) return r.warning
-  return `Wrapped up. ${r.moved_count} waiting ${r.moved_count === 1 ? 'student' : 'students'} moved to the next session with a boost.`
+  return `Wrapped up · ${r.moved_count} moved to the next session.`
 }
 export const resetDemo = () => { localStorage.removeItem(KEY) }

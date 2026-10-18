@@ -1,6 +1,7 @@
 .shell { max-width: 1240px; margin: 0 auto; padding: 0 32px 64px; }
 .top { display: flex; align-items: center; gap: 24px; padding: 20px 0; flex-wrap: wrap; }
-.logo { font-size: 20px; letter-spacing: -0.02em; }
+.logo { font-size: 20px; font-weight: 800; letter-spacing: -0.02em; background: none; border: 0; padding: 0; color: var(--text); }
+.logo:hover { color: var(--blue-text); }
 .tabs { display: flex; gap: 16px; align-items: center; }
 .top-right { margin-left: auto; display: flex; gap: 16px; align-items: center; }
 /* Nav buttons: plain text, split by thin vertical lines. The current one is bold blue. */
@@ -19,7 +20,7 @@
 main { padding-top: 36px; }
 .grid.student { grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); }
 .grid.pro { grid-template-columns: minmax(0, 1fr) 340px; }
-.stack { display: grid; gap: 18px; }
+.stack { display: grid; gap: 22px; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 22px; }
 .muted { color: var(--muted); }
 .pad { padding-top: 8px; }
@@ -122,6 +123,8 @@ input:focus, textarea:focus { border-color: var(--blue-text); outline: none; }
 .grow { flex: 1; min-width: 0; display: grid; gap: 6px; justify-items: start; }
 .small-note { font-size: 13px; margin: 4px 0 0; }
 .link.inline { display: inline; justify-self: auto; }
+/* Back link: top left, above everything else on the page. */
+.link.back { display: block; margin-bottom: 22px; font-size: 14px; }
 
 /* ---- Student: join a group from the line ---- */
 .list li > div:not(.joinbox) { flex: 1; min-width: 0; }
@@ -155,7 +158,6 @@ input:focus, textarea:focus { border-color: var(--blue-text); outline: none; }
 .shell { --pad: 32px; }
 .top { position: sticky; top: 0; z-index: 30; margin: 0 calc(var(--pad) * -1); padding: 14px var(--pad); background: var(--bg); border-bottom: 1px solid var(--line); gap: 16px; }
 @media (max-width: 900px) { .shell { --pad: 18px; } }
-.home { display: inline-flex; align-items: center; gap: 7px; }
 select { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 11px 13px; color: var(--text); }
 select:focus { border-color: var(--blue-text); outline: none; }
 code { background: var(--card2); padding: 1px 6px; border-radius: 6px; font-size: 0.9em; }

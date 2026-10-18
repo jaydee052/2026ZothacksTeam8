@@ -189,6 +189,8 @@ export default function App() {
   const openClass = (c) => { setLastClass(c); setView('class') }
   const openCourse = (c) => { setProClass(c); setView('course') }
   const goHome = () => setView('home')
+  // Which page is really showing (a class page with no class falls back to home).
+  const onHome = role === 'professor' ? !(view === 'course' && curProClass) : !(view === 'profile' || (view === 'class' && cur))
 
   const studentProps = { queue, groups, cats, hours, act, live, ready, me, course: cur, go: setView }
 
@@ -196,7 +198,7 @@ export default function App() {
     <Colors.Provider value={colorOf}>
       <div className="shell">
         <header className="top" ref={topRef}>
-          <strong className="logo">zot hours</strong>
+          <button className="logo" aria-current={onHome ? 'page' : undefined} aria-label="zot hours, go home" onClick={goHome}>zot hours</button>
           <Sep />
           <nav className="tabs" aria-label="View">
             {['student', 'professor'].map((r, i) => (
@@ -207,25 +209,24 @@ export default function App() {
             ))}
           </nav>
           <div className="top-right">
-            <button className="navbtn home" aria-current={view === 'home' ? 'page' : undefined} onClick={goHome}><HomeIcon />Home</button>
-            {!live && ready && <><Sep /><span className="pill muted" title="Backend not reachable, using local demo data">Demo data</span></>}
-            {hours && <><Sep /><span className={`cc cc-${colorOf(hours.course)} pill tinted ${hours.state === 'closed' ? 'closed' : ''}`}><i />{hours.course} {hours.state === 'running' ? 'is open' : hours.state === 'upcoming' ? `starts ${when(hours.starts_at)}` : 'has ended'}</span></>}
-            {role === 'student' && <><Sep /><button className="navbtn" aria-current={view === 'profile' ? 'page' : undefined} onClick={() => setView('profile')}>Profile</button></>}
-            <Sep />
+            {!live && ready && <><span className="pill muted" title="Backend not reachable, using local demo data">Demo data</span><Sep /></>}
+            {hours && <><span className={`cc cc-${colorOf(hours.course)} pill tinted ${hours.state === 'closed' ? 'closed' : ''}`}><i />{hours.course} {hours.state === 'running' ? 'is open' : hours.state === 'upcoming' ? `starts ${when(hours.starts_at)}` : 'has ended'}</span><Sep /></>}
+            {role === 'student' && <><button className="navbtn" aria-current={view === 'profile' ? 'page' : undefined} onClick={() => setView('profile')}>Profile</button><Sep /></>}
             <button className="navbtn" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label="Toggle light and dark mode">
               {theme === 'dark' ? 'Light mode' : 'Dark mode'}
             </button>
           </div>
         </header>
         <main>
+          {!onHome && <Back go={goHome} label={role === 'professor' ? 'All courses' : 'All classes'} />}
           {role === 'professor' ? (
             view === 'course' && curProClass ? (
-              <Professor {...{ groups, queue, cats, hours, act, live, ready, courses: proCourseLabels, course: curProClass, info: proCourses.find((c) => c.course === curProClass), setProClass: openCourse, goHome }} />
+              <Professor {...{ groups, queue, cats, hours, act, live, ready, courses: proCourseLabels, course: curProClass, info: proCourses.find((c) => c.course === curProClass), setProClass: openCourse }} />
             ) : (
               <ProHome {...{ prof, profError, sessions, openCourse }} />
             )
           ) : view === 'profile' ? (
-            <Profile {...{ me, classes, enrollment, enrollError, go: setView }} />
+            <Profile {...{ me, classes, enrollment, enrollError }} />
           ) : view === 'class' && cur ? (
             <Student {...studentProps} />
           ) : (
@@ -241,14 +242,6 @@ export default function App() {
 // Thin vertical line between items in the nav bar.
 function Sep() {
   return <span className="vsep" aria-hidden="true" />
-}
-
-function HomeIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M3 11.5 12 4l9 7.5" /><path d="M5 10v10h14V10" /><path d="M10 20v-6h4v6" />
-    </svg>
-  )
 }
 
 // Open padlock = free to move by score. Closed padlock = held in its spot.
@@ -267,17 +260,18 @@ function Cat({ type, cats }) {
   return <span className={`cc cc-${i % PALETTE} catcap`}>{cats[type]?.label || type}</span>
 }
 
-function Back({ go, label = 'All classes' }) {
-  return <button className="link" onClick={() => go('home')}>← {label}</button>
+// "← All classes" / "← All courses": top left of every page below the home pages.
+function Back({ go, label }) {
+  return <button className="link back" onClick={go}>← {label}</button>
 }
 
 function sessionLine(sessions, course) {
   const s = api.bestSession(sessions, course)
-  if (!s) return 'No sessions scheduled yet'
+  if (!s) return 'No sessions yet'
   const waiting = s.waiting_count != null ? ` · ${s.waiting_count} waiting` : ''
-  if (s.state === 'running') return `Open now at ${s.location}${waiting}`
-  if (s.state === 'upcoming') return `Next: ${when(s.starts_at)} at ${s.location}${waiting}`
-  return 'Last session has ended'
+  if (s.state === 'running') return `Open now · ${s.location}${waiting}`
+  if (s.state === 'upcoming') return `Next: ${when(s.starts_at)} · ${s.location}${waiting}`
+  return 'Last session ended'
 }
 
 function Status({ enrollment, enrollError, what }) {
@@ -285,7 +279,7 @@ function Status({ enrollment, enrollError, what }) {
   return (
     <div className="card">
       <h2>{enrollError ? `Couldn't load ${what}` : `Loading ${what}…`}</h2>
-      <p className="muted pad">{enrollError ? `${enrollError}. Is the backend running (./dev.sh)? Trying again every few seconds.` : 'Asking the Anteater API.'}</p>
+      {enrollError && <p className="muted pad">{enrollError}. Retrying…</p>}
     </div>
   )
 }
@@ -306,10 +300,10 @@ function StudentHome({ me, classes, enrollment, enrollError, sessions, openClass
   const failed = enrollment?.failed ?? []
   return (
     <section className="stack narrow">
-      <h1>Hey {me.name}. Pick a class.</h1>
-      <p className="muted">Your classes this quarter.</p>
+      <h1>Pick a class</h1>
+      <p className="muted">Your classes this quarter</p>
       <Status {...{ enrollment, enrollError }} what="your classes" />
-      {enrollment && classes.length === 0 && <div className="card"><p className="muted">Anteater didn't return any classes. Check the section codes in <code>frontend/src/config.js</code>.</p></div>}
+      {enrollment && classes.length === 0 && <div className="card"><p className="muted">No classes found. Check the section codes in <code>config.js</code>.</p></div>}
       <ul className="rows">
         {classes.map((c) => (
           <li key={c.course} className="card dash">
@@ -323,15 +317,14 @@ function StudentHome({ me, classes, enrollment, enrollError, sessions, openClass
           </li>
         ))}
       </ul>
-      {failed.length > 0 && <p className="fine left">Anteater couldn't find: {failed.join('; ')}</p>}
+      {failed.length > 0 && <p className="fine left">Not found: {failed.join('; ')}</p>}
     </section>
   )
 }
 
-function Profile({ me, classes, enrollment, enrollError, go }) {
+function Profile({ me, classes, enrollment, enrollError }) {
   return (
     <section className="stack narrow">
-      <Back go={go} />
       <h1>Profile</h1>
       <div className="card">
         <p className="muted">Name</p>
@@ -354,15 +347,15 @@ function ProHome({ prof, profError, sessions, openCourse }) {
   const waiting = courses.reduce((a, c) => a + (api.bestSession(sessions, c.course)?.waiting_count ?? 0), 0)
   return (
     <section className="stack narrow">
-      <h1>{prof ? `${prof.name}'s courses` : 'Your courses'}</h1>
-      {prof && <p className="muted">{prof.quarter} {prof.year} · {courses.length} {courses.length === 1 ? 'course' : 'courses'} · {waiting} {waiting === 1 ? 'student' : 'students'} waiting. Each course has its own office hours and line.</p>}
+      <h1>Your courses</h1>
+      {prof && <p className="muted">{prof.name} · {prof.quarter} {prof.year} · {waiting} waiting</p>}
       {!prof && (
         <div className="card">
           <h2>{profError ? "Couldn't load your courses" : 'Loading your courses…'}</h2>
-          <p className="muted pad">{profError ? `${profError}. Is the backend running (./dev.sh)? Trying again every few seconds.` : 'Asking the Anteater API.'}</p>
+          {profError && <p className="muted pad">{profError}. Retrying…</p>}
         </div>
       )}
-      {prof && courses.length === 0 && <div className="card"><p className="muted">Anteater lists no lecture courses for {prof.name} in {prof.quarter} {prof.year}.</p></div>}
+      {prof && courses.length === 0 && <div className="card"><p className="muted">No lecture courses in {prof.quarter} {prof.year}.</p></div>}
       <ul className="rows">
         {courses.map((c) => (
           <li key={c.course} className="card dash">
@@ -444,13 +437,13 @@ function Student({ queue, groups, cats, hours, act, live, ready, me, course, go 
     return act(async () => {
       const t = await api.join({ student_name: me.name.trim(), class_section: me.section.trim(), question: q.trim(), question_type: type, bucket_id, office_hours_id: hours?.id })
       setMine((m) => [...m, { id: t.id, name: me.name.trim() }]); setQ('')
-    }, 'Saved. Your spot is in the line.')
+    }, 'Spot saved.')
   }
   // "Same question?" on a row in the line: join that group as it is.
   const joinGroup = (g) => act(async () => {
     const t = await api.join({ student_name: me.name.trim(), class_section: me.section.trim(), bucket_id: g.id, office_hours_id: hours?.id })
     setMine((m) => [...m, { id: t.id, name: me.name.trim() }])
-  }, 'You joined the group. You keep its place in line.')
+  }, 'Joined the group.')
   // A new question in a session that already started goes to the back, so ask first.
   const startNew = () => (running ? setConfirm(true) : submit())
   const ok = canJoin && hasProfile && n > 0 && !over
@@ -461,7 +454,7 @@ function Student({ queue, groups, cats, hours, act, live, ready, me, course, go 
     const ts = kind === 'done' ? [latest] : myTickets
     return act(async () => {
       await Promise.all(ts.map((t) => (kind === 'done' ? api.update(t.id, { status: 'done' }) : api.leave(t.id))))
-    }, kind === 'done' ? "Glad that got fixed. You're off the list." : 'You left the line. You can join again any time.')
+    }, kind === 'done' ? 'Marked as fixed.' : 'You left the line.')
   }
 
   if (!course) return null
@@ -469,48 +462,47 @@ function Student({ queue, groups, cats, hours, act, live, ready, me, course, go 
   return (
     <div className="grid student">
       <section className="stack askcol">
-        <Back go={go} />
         <div className={`cc cc-${colorOf(course)} band`}>
           <h2>{course}</h2>
           <span>{hours ? `${hours.location} · ${when(hours.starts_at)}` : ready ? 'No sessions scheduled' : ''}</span>
         </div>
-        <h1>{me.name.trim() ? `Hey ${me.name.trim()}, what's tripping you up?` : "What's tripping you up?"}</h1>
-        {hours && <p className="muted">{hours.state === 'upcoming' ? `${hours.course} starts ${when(hours.starts_at)} at ${hours.location}. Join now to go ahead of anyone who joins after it starts.` : hours.state === 'running' ? `${hours.course} is running at ${hours.location}. New questions go behind anyone already waiting.` : 'These office hours have ended. Check back for the next session.'}</p>}
+        <h1>What's your question?</h1>
+        {hours && <p className="muted">{hours.state === 'upcoming' ? 'Join before it starts to stay ahead.' : hours.state === 'running' ? 'In session · new questions go to the back' : 'This session has ended'}</p>}
         {ready && !canJoin ? (
           <div className="card">
-            <h2>{hours ? 'No open office hours right now' : 'No office hours scheduled yet'}</h2>
-            <p className="muted pad">{hours ? 'Your professor will post the next session here.' : 'Once your professor schedules a session, you can save your spot here.'}</p>
+            <h2>{hours ? 'No open office hours' : 'No office hours yet'}</h2>
+            <p className="muted pad">Check back when the next session is posted.</p>
           </div>
         ) : (
           <div className="askstick">
             <div className="card form ask">
-              {!hasProfile && <p className="muted">We couldn't find your section for this class yet. Check your <button className="link inline" onClick={() => go('profile')}>profile</button>.</p>}
-              <label>In a sentence or two
+              {!hasProfile && <p className="muted">No section found. Check your <button className="link inline" onClick={() => go('profile')}>profile</button>.</p>}
+              <label>Your question
                 <textarea rows={3} value={q} onChange={(e) => setQ(e.target.value)} placeholder="My recursive flatten() returns None for nested lists, but works for flat ones." />
               </label>
-              <div className={`count ${over ? 'bad' : ''}`}>{n}/25 words{over && ' · shorten it a little'}</div>
+              <div className={`count ${over ? 'bad' : ''}`}>{n}/25 words{over && ' · too long'}</div>
               <div className="chips" role="radiogroup" aria-label="Question type">
                 {Object.entries(cats).map(([id, cat]) => (
                   <button key={id} role="radio" aria-checked={type === id} className={type === id ? 'chip on' : 'chip'} onClick={() => setType(id)}>{cat.label}</button>
                 ))}
               </div>
-              <p className="muted small-note">Asking as {me.name.trim() || 'nobody yet'}{me.section.trim() && `, ${me.section.trim()}`}.</p>
+              <p className="muted small-note">{me.name.trim() || 'No name'}{me.section.trim() && ` · ${me.section.trim()}`}</p>
             </div>
             {similar && (
               <div className="card hint">
-                <h3>Maybe this helps first</h3>
-                <p>{similar.count} {similar.count === 1 ? 'classmate is' : 'classmates are'} waiting on something close: “{similar.title}”. Joining them gets you helped in one go{running ? ', and you keep their place in line even though the session has started' : ''}.</p>
+                <h3>Similar question in line</h3>
+                <p>“{similar.title}” · {similar.count} waiting</p>
                 <div className="btns">
-                  <button className="btn dark" disabled={!ok} onClick={() => submit(similar.id)}>Join the group</button>
-                  <button className="btn outline" disabled={!ok} onClick={startNew}>Keep mine separate</button>
+                  <button className="btn dark" disabled={!ok} onClick={() => submit(similar.id)}>Join group</button>
+                  <button className="btn outline" disabled={!ok} onClick={startNew}>Ask separately</button>
                 </div>
               </div>
             )}
             <div className="savebar">
             {confirm ? (
               <div className="card hint" role="alertdialog" aria-label="Session already started">
-                <h3>This session has started</h3>
-                <p>Your question will go to the back of the line, behind everyone already waiting.</p>
+                <h3>Session already started</h3>
+                <p>Your question goes to the back of the line.</p>
                 <div className="btns">
                   <button className="btn dark" onClick={() => submit()}>Join anyway</button>
                   <button className="btn outline" onClick={() => setConfirm(false)}>Cancel</button>
@@ -519,7 +511,7 @@ function Student({ queue, groups, cats, hours, act, live, ready, me, course, go 
             ) : (
               <div>
                 <button className="btn primary wide" disabled={!ok} onClick={startNew}>Save my spot</button>
-                <p className="fine">{ok ? `You'd be ${ordinal(nextSpot)} in line, about ${nextWait} minutes.` : 'Add a question (25 words max) to save your spot.'}</p>
+                <p className="fine">{ok ? `${ordinal(nextSpot)} in line · about ${nextWait} min` : 'Add a question to save your spot'}</p>
               </div>
             )}
             </div>
@@ -533,9 +525,9 @@ function Student({ queue, groups, cats, hours, act, live, ready, me, course, go 
             <p className="muted">Your spot</p>
             <h2 className="big">{ordinal(pos)} in line</h2>
             <p>“{groups[myGroupIdx].title}”</p>
-            <p>About {wait} minutes. {groups[myGroupIdx].tickets.length > 1 && `You're sharing this with ${groups[myGroupIdx].tickets.length - 1} other.`}</p>
-            {myBuckets.size > 1 && <p className="muted">You have {myBuckets.size - 1} other {myBuckets.size === 2 ? 'question' : 'questions'} in line too.</p>}
-            {lateMine && <p className="muted">You joined after the session started, so you're behind everyone who was already waiting.</p>}
+            <p>About {wait} min{groups[myGroupIdx].tickets.length > 1 && ` · with ${groups[myGroupIdx].tickets.length - 1} ${groups[myGroupIdx].tickets.length === 2 ? 'other' : 'others'}`}</p>
+            {myBuckets.size > 1 && <p className="muted">+{myBuckets.size - 1} more {myBuckets.size === 2 ? 'question' : 'questions'} in line</p>}
+            {lateMine && <p className="muted">Joined late · behind on-time questions</p>}
             <div className="btns">
               <button className="btn outline" onClick={() => finish('done')}>Fixed it, thanks</button>
               <button className="btn outline" onClick={() => finish('left')}>Leave the line</button>
@@ -544,15 +536,15 @@ function Student({ queue, groups, cats, hours, act, live, ready, me, course, go 
         )}
         <div className="line">
           <h2>The line right now</h2>
-          {groups.length > 0 && <p className="muted small-note">Same question as one of these? Joining gets you helped together, and you keep the group's place in line.</p>}
-          {groups.length === 0 && <p className="muted pad">Nobody's waiting. Ask away and you'll be first.</p>}
+          {groups.length > 0 && <p className="muted small-note">Same question? Join to get helped together.</p>}
+          {groups.length === 0 && <p className="muted pad">No one's waiting. You'd be first.</p>}
           <ol className="list">
             {groups.map((g, i) => {
               const yours = g.tickets.some(isMine)
               return (
                 <li key={g.id} className={yours ? 'me' : ''}>
                   <span className="num">{i + 1}</span>
-                  <div><b>{g.title}</b><small>{g.tickets.length} {g.tickets.length === 1 ? 'student' : 'students'} · ~{g.mins} min{yours && " · you're in this group"}</small></div>
+                  <div><b>{g.title}</b><small>{g.tickets.length} {g.tickets.length === 1 ? 'student' : 'students'} · ~{g.mins} min{yours && ' · your group'}</small></div>
                   {!yours && (
                     <div className="joinbox">
                       <span>Same question?</span>
@@ -569,7 +561,7 @@ function Student({ queue, groups, cats, hours, act, live, ready, me, course, go 
   )
 }
 
-function Professor({ groups, queue, cats, hours, act, live, ready, courses, course, info, setProClass, goHome }) {
+function Professor({ groups, queue, cats, hours, act, live, ready, courses, course, info, setProClass }) {
   const colorOf = useContext(Colors)
   const [helped, setHelped] = useStored('zh.helped', 0)
   const [form, setForm] = useState(null)
@@ -581,8 +573,8 @@ function Professor({ groups, queue, cats, hours, act, live, ready, courses, cour
   const saved = groups.reduce((a, g) => a + g.solo - g.mins, 0)
   const finish = (g) => act(async () => { await api.resolveGroup(g.id, g.tickets); setHelped((h) => h + g.tickets.length) })
   // Dropping a group pins it at that spot (1 = top, counted in groups).
-  const pin = (g, position) => act(() => api.pinGroup(g.id, position), `Locked in spot ${position}. It stays there until you unlock it.`)
-  const unpin = (g) => act(() => api.pinGroup(g.id, null), 'Unlocked. The score decides its spot again.')
+  const pin = (g, position) => act(() => api.pinGroup(g.id, position), `Locked in spot ${position}.`)
+  const unpin = (g) => act(() => api.pinGroup(g.id, null), 'Unlocked.')
 
   // Drag handle: pointer events work for mouse, pen and touch. Arrow keys move a group too.
   const dropTo = (clientY, from) => {
@@ -637,7 +629,6 @@ function Professor({ groups, queue, cats, hours, act, live, ready, courses, cour
   return (
     <div className="grid pro">
       <section className="stack">
-        <button className="link" onClick={goHome}>← All courses</button>
         {courses.length > 1 && (
           <div className="chips" role="group" aria-label="Course">
             {courses.map((c) => (
@@ -649,24 +640,24 @@ function Professor({ groups, queue, cats, hours, act, live, ready, courses, cour
           <h2>{course}</h2>
           <span>{info?.course_title}</span>
         </div>
-        <h1>{queue.length} {queue.length === 1 ? 'student' : 'students'}, {groups.length} {groups.length === 1 ? 'conversation' : 'conversations'}.</h1>
+        <h1>{queue.length} {queue.length === 1 ? 'student' : 'students'} · {groups.length} {groups.length === 1 ? 'group' : 'groups'}</h1>
         {first ? (
           <div className={`next${dragClass(0)}`} ref={(el) => { refs.current[0] = el }}>
             <div>
               <p className="eyebrow">Next up</p>
               <h2 className="big">{first.title}</h2>
-              <p><Names tickets={first.tickets} /> {first.tickets.length > 1 ? 'are all' : 'is'} stuck on this. About {first.mins} minutes.</p>
+              <p><Names tickets={first.tickets} /> · about {first.mins} min</p>
               <div className="tags">{hours && <ClassTag course={hours.course} />}<Cat type={first.type} cats={cats} /></div>
               <div className="btns">
                 <button className="btn light" onClick={() => finish(first)}>{first.tickets.length > 1 ? 'Start with all' : 'Start with this student'}</button>
                 {grip(first, 0)}
                 {lockBtn(first, 0)}
-                {first.solo > first.mins && <span>Saves about {first.solo - first.mins} minutes</span>}
+                {first.solo > first.mins && <span>Saves {first.solo - first.mins} min</span>}
               </div>
             </div>
             <i className="sun" aria-hidden="true" />
           </div>
-        ) : <div className="card"><h2>The queue is empty.</h2><p className="muted">New questions show up here as students save their spots.</p></div>}
+        ) : <div className="card"><h2>Queue is empty</h2><p className="muted">New questions show up here.</p></div>}
         {rest.length > 0 && <h2>After that</h2>}
         <ol className="rows">
           {rest.map((g, k) => {
@@ -674,7 +665,7 @@ function Professor({ groups, queue, cats, hours, act, live, ready, courses, cour
             const prev = groups[i - 1]
             return (
               <Fragment key={g.id}>
-                {isLate(g) && !isLate(prev) && <li className="divider" aria-hidden="true"><span>Joined after the session started</span></li>}
+                {isLate(g) && !isLate(prev) && <li className="divider" aria-hidden="true"><span>Joined after start</span></li>}
                 <li className={`card row${dragClass(i)}`} ref={(el) => { refs.current[i] = el }}>
                   {grip(g, i, ' side')}
                   <Cat type={g.type} cats={cats} />
@@ -683,8 +674,8 @@ function Professor({ groups, queue, cats, hours, act, live, ready, courses, cour
                     <small>
                       {hours && <><ClassTag course={hours.course} />{' '}</>}
                       <Names tickets={g.tickets} /> · {g.tickets.length} {g.tickets.length === 1 ? 'student' : 'students'} · ~{g.mins} min
-                      {g.tickets.some((t) => t.overflow_count > 0) && ' · pushed from last session'}
-                      {isLate(g) && ' · joined late'}
+                      {g.tickets.some((t) => t.overflow_count > 0) && ' · from last session'}
+                      {isLate(g) && ' · late'}
                     </small>
                   </div>
                   <div className="btns">
@@ -706,16 +697,16 @@ function Professor({ groups, queue, cats, hours, act, live, ready, courses, cour
             </div>
           </div>
         )}
-        {groups.length > 1 && <p className="muted small-note">Drag the handle to move a group; it locks where you drop it. Click an open lock to hold a group in its current spot, or a closed lock to let the score decide again. Locked groups stay put whatever the score says.</p>}
+        {groups.length > 1 && <p className="muted small-note">Drag to reorder · click a lock to hold or release a spot</p>}
       </section>
 
       <aside className="stack">
         <div className="card">
-          <h2>Today so far</h2>
+          <h2>Today</h2>
           <dl className="stats">
             <div><dd>{helped}</dd><dt>helped</dt></div>
-            <div><dd>{left}m</dd><dt>left in queue</dt></div>
-            <div><dd className="accent">−{saved}m</dd><dt>from grouping</dt></div>
+            <div><dd>{left}m</dd><dt>left</dt></div>
+            <div><dd className="accent">−{saved}m</dd><dt>saved by grouping</dt></div>
           </dl>
         </div>
         {hours && form && (
@@ -727,13 +718,13 @@ function Professor({ groups, queue, cats, hours, act, live, ready, courses, cour
               <label>Ends<input type="datetime-local" value={form.ends_at} onChange={(e) => setForm({ ...form, ends_at: e.target.value })} /></label>
             </div>
             <div className="btns">
-              <button className="btn dark" onClick={() => act(() => api.saveHours(form), 'Office hours updated.')}>Save changes</button>
-              {hours.state === 'upcoming' && <button className="btn outline" onClick={() => act(() => api.saveHours({ is_open: true }), 'Office hours started. New questions now go behind the line.')}>Open now</button>}
+              <button className="btn dark" onClick={() => act(() => api.saveHours(form), 'Saved.')}>Save changes</button>
+              {hours.state === 'upcoming' && <button className="btn outline" onClick={() => act(() => api.saveHours({ is_open: true }), 'Office hours open.')}>Open now</button>}
               {hours.state === 'running' && <button className="btn outline" onClick={() => act(() => api.wrapUp(), (msg) => msg)}>Wrap up</button>}
-              {hours.state === 'closed' && <span className="muted">These office hours ended.</span>}
+              {hours.state === 'closed' && <span className="muted">Ended</span>}
             </div>
             {live && hours.state === 'running' && !hours.has_next && queue.length > 0 && (
-              <p className="fine left">No later {hours.course} session is scheduled. Schedule one below before wrapping up, or the {queue.length === 1 ? 'student' : `${queue.length} students`} still waiting will stay in this one.</p>
+              <p className="fine left">No later session · {queue.length} waiting will stay here</p>
             )}
             {!live && <button className="link" onClick={() => { api.resetDemo(); localStorage.removeItem('zh.mine2'); location.reload() }}>Reset demo data</button>}
           </div>
@@ -761,11 +752,11 @@ function NewSession({ act, course, courses, alwaysOpen, onCreated }) {
   const valid = f.course.trim() && f.location.trim() && f.starts_at && f.ends_at && f.ends_at > f.starts_at
 
   if (!open && !alwaysOpen) {
-    return <button className="btn outline" onClick={() => setOpen(true)}>Schedule a new session</button>
+    return <button className="btn outline" onClick={() => setOpen(true)}>Schedule a session</button>
   }
   return (
     <div className="card form">
-      <h2>{alwaysOpen ? 'No sessions yet. Schedule one.' : 'New session'}</h2>
+      <h2>{alwaysOpen ? 'Schedule your first session' : 'New session'}</h2>
       <div className="row2">
         <label>Course
           {courses.length > 0
@@ -778,7 +769,7 @@ function NewSession({ act, course, courses, alwaysOpen, onCreated }) {
         <label>Starts<input type="datetime-local" value={f.starts_at} onChange={set('starts_at')} /></label>
         <label>Ends<input type="datetime-local" value={f.ends_at} onChange={set('ends_at')} /></label>
       </div>
-      {f.starts_at && f.ends_at && f.ends_at <= f.starts_at && <p className="fine left">The end time has to be after the start time.</p>}
+      {f.starts_at && f.ends_at && f.ends_at <= f.starts_at && <p className="fine left">End time must be after start time.</p>}
       <div className="btns">
         <button className="btn dark" disabled={!valid} onClick={() => act(async () => {
           await api.createHours({ course: f.course.trim(), location: f.location.trim(), starts_at: f.starts_at, ends_at: f.ends_at })
