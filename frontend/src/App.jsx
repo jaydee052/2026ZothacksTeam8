@@ -197,17 +197,22 @@ export default function App() {
       <div className="shell">
         <header className="top" ref={topRef}>
           <strong className="logo">zot hours</strong>
-          <button className="home" aria-current={view === 'home' ? 'page' : undefined} onClick={goHome}><HomeIcon />Home</button>
+          <Sep />
           <nav className="tabs" aria-label="View">
-            {['student', 'professor'].map((r) => (
-              <button key={r} className={role === r ? 'on' : ''} onClick={() => { setRole(r); setView('home') }}>{r === 'student' ? 'Student' : 'Professor'}</button>
+            {['student', 'professor'].map((r, i) => (
+              <Fragment key={r}>
+                {i > 0 && <Sep />}
+                <button className="navbtn" aria-current={role === r ? 'true' : undefined} onClick={() => { setRole(r); setView('home') }}>{r === 'student' ? 'Student' : 'Professor'}</button>
+              </Fragment>
             ))}
           </nav>
           <div className="top-right">
-            {!live && ready && <span className="pill muted" title="Backend not reachable, using local demo data">Demo data</span>}
-            {hours && <span className={`cc cc-${colorOf(hours.course)} pill tinted ${hours.state === 'closed' ? 'closed' : ''}`}><i />{hours.course} {hours.state === 'running' ? 'is open' : hours.state === 'upcoming' ? `starts ${when(hours.starts_at)}` : 'has ended'}</span>}
-            {role === 'student' && <button className="ghost" aria-current={view === 'profile' ? 'page' : undefined} onClick={() => setView('profile')}>Profile</button>}
-            <button className="ghost" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label="Toggle light and dark mode">
+            <button className="navbtn home" aria-current={view === 'home' ? 'page' : undefined} onClick={goHome}><HomeIcon />Home</button>
+            {!live && ready && <><Sep /><span className="pill muted" title="Backend not reachable, using local demo data">Demo data</span></>}
+            {hours && <><Sep /><span className={`cc cc-${colorOf(hours.course)} pill tinted ${hours.state === 'closed' ? 'closed' : ''}`}><i />{hours.course} {hours.state === 'running' ? 'is open' : hours.state === 'upcoming' ? `starts ${when(hours.starts_at)}` : 'has ended'}</span></>}
+            {role === 'student' && <><Sep /><button className="navbtn" aria-current={view === 'profile' ? 'page' : undefined} onClick={() => setView('profile')}>Profile</button></>}
+            <Sep />
+            <button className="navbtn" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label="Toggle light and dark mode">
               {theme === 'dark' ? 'Light mode' : 'Dark mode'}
             </button>
           </div>
@@ -231,6 +236,11 @@ export default function App() {
       </div>
     </Colors.Provider>
   )
+}
+
+// Thin vertical line between items in the nav bar.
+function Sep() {
+  return <span className="vsep" aria-hidden="true" />
 }
 
 function HomeIcon() {
@@ -297,7 +307,7 @@ function StudentHome({ me, classes, enrollment, enrollError, sessions, openClass
   return (
     <section className="stack narrow">
       <h1>Hey {me.name}. Pick a class.</h1>
-      <p className="muted">Your classes this quarter, straight from the Anteater API.</p>
+      <p className="muted">Your classes this quarter.</p>
       <Status {...{ enrollment, enrollError }} what="your classes" />
       {enrollment && classes.length === 0 && <div className="card"><p className="muted">Anteater didn't return any classes. Check the section codes in <code>frontend/src/config.js</code>.</p></div>}
       <ul className="rows">
@@ -375,7 +385,6 @@ function Student({ queue, groups, cats, hours, act, live, ready, me, course, go 
   // never claim someone else's ticket.
   const colorOf = useContext(Colors)
   const [mine, setMine] = useStored('zh.mine2', [])
-  const [past, setPast] = useStored('zh.past', [])
   const [q, setQ] = useState('')
   const [type, setType] = useState('understanding_topic')
   const [confirm, setConfirm] = useState(false)
@@ -452,10 +461,8 @@ function Student({ queue, groups, cats, hours, act, live, ready, me, course, go 
     const ts = kind === 'done' ? [latest] : myTickets
     return act(async () => {
       await Promise.all(ts.map((t) => (kind === 'done' ? api.update(t.id, { status: 'done' }) : api.leave(t.id))))
-      setPast((p) => [...ts.map((t) => ({ id: t.id, question: t.question, status: kind, course, at: Date.now() })), ...p].slice(0, 30))
     }, kind === 'done' ? "Glad that got fixed. You're off the list." : 'You left the line. You can join again any time.')
   }
-  const myPast = past.filter((p) => p.course === course).slice(0, 5)
 
   if (!course) return null
 
@@ -535,11 +542,11 @@ function Student({ queue, groups, cats, hours, act, live, ready, me, course, go 
             </div>
           </div>
         )}
-        <div className="card">
+        <div className="line">
           <h2>The line right now</h2>
           {groups.length > 0 && <p className="muted small-note">Same question as one of these? Joining gets you helped together, and you keep the group's place in line.</p>}
           {groups.length === 0 && <p className="muted pad">Nobody's waiting. Ask away and you'll be first.</p>}
-          <ol className="list scroll">
+          <ol className="list">
             {groups.map((g, i) => {
               const yours = g.tickets.some(isMine)
               return (
@@ -557,16 +564,6 @@ function Student({ queue, groups, cats, hours, act, live, ready, me, course, go 
             })}
           </ol>
         </div>
-        {myPast.length > 0 && (
-          <div className="card">
-            <h2>Past questions</h2>
-            <ul className="list">
-              {myPast.map((p) => (
-                <li key={`${p.id}-${p.at}`}><div><b>{p.question}</b><small>{p.status === 'done' ? 'Done' : 'Left the line'}</small></div></li>
-              ))}
-            </ul>
-          </div>
-        )}
       </aside>
     </div>
   )
@@ -597,12 +594,19 @@ function Professor({ groups, queue, cats, hours, act, live, ready, courses, cour
     })
     return to
   }
-  const grip = (g, i) => (
+  // While dragging, a floating copy of the card follows the pointer. drag also keeps where
+  // the card was grabbed (dy) and its box (left, width), so the copy lines up under it.
+  const grip = (g, i, cls = '') => (
     <button
-      type="button" className="grip"
+      type="button" className={`grip${cls}`}
       aria-label={`Move “${g.title}”. Drag it, or press the up and down arrow keys.`}
-      onPointerDown={(e) => { if (e.button !== 0) return; e.currentTarget.setPointerCapture(e.pointerId); setDrag({ from: i, to: i }) }}
-      onPointerMove={(e) => { if (drag && drag.from === i) { const to = dropTo(e.clientY, i); if (to !== drag.to) setDrag({ from: i, to }) } }}
+      onPointerDown={(e) => {
+        if (e.button !== 0) return
+        e.currentTarget.setPointerCapture(e.pointerId)
+        const r = refs.current[i]?.getBoundingClientRect()
+        setDrag({ from: i, to: i, y: e.clientY, dy: r ? e.clientY - r.top : 0, left: r?.left ?? 0, width: r?.width ?? 400 })
+      }}
+      onPointerMove={(e) => { if (drag && drag.from === i) setDrag({ ...drag, to: dropTo(e.clientY, i), y: e.clientY }) }}
       onPointerUp={() => { const d = drag; setDrag(null); if (d && d.from === i && d.to !== i) pin(g, d.to + 1) }}
       onPointerCancel={() => setDrag(null)}
       onKeyDown={(e) => {
@@ -654,7 +658,7 @@ function Professor({ groups, queue, cats, hours, act, live, ready, courses, cour
               <p><Names tickets={first.tickets} /> {first.tickets.length > 1 ? 'are all' : 'is'} stuck on this. About {first.mins} minutes.</p>
               <div className="tags">{hours && <ClassTag course={hours.course} />}<Cat type={first.type} cats={cats} /></div>
               <div className="btns">
-                <button className="btn light" onClick={() => finish(first)}>{first.tickets.length > 1 ? `Start with all ${first.tickets.length}` : 'Start with this student'}</button>
+                <button className="btn light" onClick={() => finish(first)}>{first.tickets.length > 1 ? 'Start with all' : 'Start with this student'}</button>
                 {grip(first, 0)}
                 {lockBtn(first, 0)}
                 {first.solo > first.mins && <span>Saves about {first.solo - first.mins} minutes</span>}
@@ -672,8 +676,9 @@ function Professor({ groups, queue, cats, hours, act, live, ready, courses, cour
               <Fragment key={g.id}>
                 {isLate(g) && !isLate(prev) && <li className="divider" aria-hidden="true"><span>Joined after the session started</span></li>}
                 <li className={`card row${dragClass(i)}`} ref={(el) => { refs.current[i] = el }}>
+                  {grip(g, i, ' side')}
                   <Cat type={g.type} cats={cats} />
-                  <div>
+                  <div className="rowtext">
                     <b>{g.title}</b>
                     <small>
                       {hours && <><ClassTag course={hours.course} />{' '}</>}
@@ -684,7 +689,6 @@ function Professor({ groups, queue, cats, hours, act, live, ready, courses, cour
                   </div>
                   <div className="btns">
                     <button className="btn outline" onClick={() => finish(g)}>{g.tickets.length > 1 ? 'Help together' : 'Help'}</button>
-                    {grip(g, i)}
                     {lockBtn(g, i)}
                   </div>
                 </li>
@@ -692,6 +696,16 @@ function Professor({ groups, queue, cats, hours, act, live, ready, courses, cour
             )
           })}
         </ol>
+        {drag && groups[drag.from] && (
+          <div className="card row floating" aria-hidden="true" style={{ top: drag.y - drag.dy, left: drag.left, width: drag.width }}>
+            <span className="grip side">⋮⋮</span>
+            <Cat type={groups[drag.from].type} cats={cats} />
+            <div className="rowtext">
+              <b>{groups[drag.from].title}</b>
+              <small>{groups[drag.from].tickets.length} {groups[drag.from].tickets.length === 1 ? 'student' : 'students'} · ~{groups[drag.from].mins} min</small>
+            </div>
+          </div>
+        )}
         {groups.length > 1 && <p className="muted small-note">Drag the handle to move a group; it locks where you drop it. Click an open lock to hold a group in its current spot, or a closed lock to let the score decide again. Locked groups stay put whatever the score says.</p>}
       </section>
 
@@ -721,7 +735,7 @@ function Professor({ groups, queue, cats, hours, act, live, ready, courses, cour
             {live && hours.state === 'running' && !hours.has_next && queue.length > 0 && (
               <p className="fine left">No later {hours.course} session is scheduled. Schedule one below before wrapping up, or the {queue.length === 1 ? 'student' : `${queue.length} students`} still waiting will stay in this one.</p>
             )}
-            {!live && <button className="link" onClick={() => { api.resetDemo(); ['zh.mine2', 'zh.past'].forEach((k) => localStorage.removeItem(k)); location.reload() }}>Reset demo data</button>}
+            {!live && <button className="link" onClick={() => { api.resetDemo(); localStorage.removeItem('zh.mine2'); location.reload() }}>Reset demo data</button>}
           </div>
         )}
         <NewSession act={act} course={course} courses={courses} alwaysOpen={ready && !hours} onCreated={setProClass} />

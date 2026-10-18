@@ -1,19 +1,22 @@
 .shell { max-width: 1240px; margin: 0 auto; padding: 0 32px 64px; }
 .top { display: flex; align-items: center; gap: 24px; padding: 20px 0; flex-wrap: wrap; }
 .logo { font-size: 20px; letter-spacing: -0.02em; }
-.tabs { display: flex; gap: 4px; background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 4px; }
-.tabs button { border: 0; background: none; padding: 6px 16px; border-radius: 999px; color: var(--muted); font-weight: 500; }
-.tabs button.on { background: var(--blue); color: #fff; }
-.top-right { margin-left: auto; display: flex; gap: 10px; align-items: center; }
+.tabs { display: flex; gap: 16px; align-items: center; }
+.top-right { margin-left: auto; display: flex; gap: 16px; align-items: center; }
+/* Nav buttons: plain text, split by thin vertical lines. The current one is bold blue. */
+.navbtn { border: 0; background: none; padding: 4px 0; font-size: 15px; font-weight: 500; color: var(--muted); }
+.navbtn:hover { color: var(--text); }
+.navbtn[aria-current] { color: var(--blue-text); font-weight: 700; }
+.vsep { flex: none; width: 1px; height: 18px; background: var(--line); }
 .pill { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; padding: 6px 12px; border-radius: 999px; background: rgba(45, 98, 224, 0.18); color: var(--blue-text); }
 .pill i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 .pill.closed { background: var(--card2); color: var(--muted); }
 .pill.muted { background: var(--yellow-soft); color: var(--yellow); }
 [data-theme='light'] .pill.muted { color: #7a5b00; }
-.ghost { background: none; border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; font-size: 14px; }
-.ghost:hover { background: var(--card); }
 
-.grid { display: grid; gap: 28px; align-items: start; padding-top: 12px; }
+.grid { display: grid; gap: 28px; align-items: start; }
+/* Room between the sticky nav bar and the first line of every page. */
+main { padding-top: 36px; }
 .grid.student { grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); }
 .grid.pro { grid-template-columns: minmax(0, 1fr) 340px; }
 .stack { display: grid; gap: 18px; }
@@ -58,7 +61,7 @@ input:focus, textarea:focus { border-color: var(--blue-text); outline: none; }
 .list small, .row small { display: block; color: var(--muted); font-size: 13px; }
 .num { flex: none; width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; background: var(--yellow); color: var(--on-yellow); }
 .row { display: flex; align-items: center; gap: 16px; padding: 16px 18px; }
-.row > div:nth-child(2) { flex: 1; min-width: 0; }
+.row > .rowtext { flex: 1; min-width: 0; }
 .row .btns { flex: none; }
 
 .next { position: relative; overflow: hidden; background: var(--blue); color: #fff; border-radius: 24px; padding: 30px; }
@@ -115,7 +118,6 @@ input:focus, textarea:focus { border-color: var(--blue-text); outline: none; }
 .next .ctag { background: rgba(255, 255, 255, 0.92); color: #14161c; }
 
 /* ---- Navigation, class pages ---- */
-.ghost[aria-current='page'] { background: var(--card2); border-color: var(--muted); }
 .narrow { max-width: 640px; }
 .grow { flex: 1; min-width: 0; display: grid; gap: 6px; justify-items: start; }
 .small-note { font-size: 13px; margin: 4px 0 0; }
@@ -145,16 +147,15 @@ input:focus, textarea:focus { border-color: var(--blue-text); outline: none; }
 /* ---- Student layout: the line on the left, the class column on the right ---- */
 .grid.student > aside { order: -1; }
 @media (max-width: 900px) { .grid.student > aside { order: 0; } }
-/* The line scrolls on its own; the rest of the page scrolls as usual. */
-.list.scroll { max-height: max(240px, calc(100vh - 300px)); overflow-y: auto; overscroll-behavior: contain; padding-right: 4px; }
+/* "The line right now": no outer box; each question is its own card. */
+.line .list li { background: var(--card); border: 1px solid var(--line); padding: 14px 16px; }
+.line .list li.me { background: rgba(45, 98, 224, 0.16); border-color: var(--blue-text); }
 
 /* ---- Sticky header: stays put while the page scrolls ---- */
 .shell { --pad: 32px; }
 .top { position: sticky; top: 0; z-index: 30; margin: 0 calc(var(--pad) * -1); padding: 14px var(--pad); background: var(--bg); border-bottom: 1px solid var(--line); gap: 16px; }
 @media (max-width: 900px) { .shell { --pad: 18px; } }
-.home { display: inline-flex; align-items: center; gap: 7px; background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; font-weight: 600; font-size: 14px; }
-.home:hover { background: var(--card2); }
-.home[aria-current='page'] { background: var(--blue); border-color: var(--blue); color: #fff; }
+.home { display: inline-flex; align-items: center; gap: 7px; }
 select { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 11px 13px; color: var(--text); }
 select:focus { border-color: var(--blue-text); outline: none; }
 code { background: var(--card2); padding: 1px 6px; border-radius: 6px; font-size: 0.9em; }
@@ -189,3 +190,10 @@ code { background: var(--card2); padding: 1px 6px; border-radius: 6px; font-size
 .next .lock:hover { background: rgba(255, 255, 255, 0.16); color: #fff; }
 .next .lock.on { background: #fff; color: #1d3f93; border-color: #fff; }
 @media (max-width: 600px) { .row > .catcap { min-width: 0; } }
+
+/* ---- Professor: full-height drag handle on the left of each row, floating card while dragging ---- */
+.row:has(> .grip.side) { padding-left: 0; overflow: hidden; }
+.grip.side { align-self: stretch; height: auto; width: 32px; margin: -16px 0; border: 0; border-right: 1px solid var(--line); border-radius: 0; display: grid; place-items: center; color: var(--muted); }
+.grip.side:hover { background: var(--card2); color: var(--text); }
+.floating { position: fixed; z-index: 50; pointer-events: none; margin: 0; box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35); transform: rotate(-1deg) scale(1.02); }
+body:has(.floating) { cursor: grabbing; user-select: none; }
