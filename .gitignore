@@ -11,3 +11,12 @@ venv/
 .env
 .env.*
 !.env.example
+
+# Impeccable (design tool): skills, agents, hooks, config and its PRODUCT.md.
+# Each teammate installs it locally with `npx impeccable install`.
+.claude/skills/impeccable/
+.claude/agents/impeccable-*.md
+.claude/settings.local.json
+.cursor/
+.impeccable/
+PRODUCT.md

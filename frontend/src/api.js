@@ -200,7 +200,7 @@ export async function join(p) {
   }
   const s = load(), id = s.next++
   const session = s.sessions.find((x) => x.id === (p.office_hours_id ?? hoursId))
-  if (!session) throw new Error('There are no office hours to join.')
+  if (!session) throw new Error('No office hours to join.')
   // A student joining a group takes on that group's category and lateness, same as the backend.
   const buddy = p.bucket_id != null ? s.tickets.find((t) => t.bucket_id === p.bucket_id) : null
   s.tickets.push({
@@ -323,10 +323,26 @@ export async function wrapUp() {
       if (t.manually_changed) t.priority *= 2
     })
     h.is_open = false; h.closed_at = local(new Date()); save(s)
-    return next ? `Wrapped up. ${moved} waiting ${moved === 1 ? 'student' : 'students'} moved to the next session with a boost.` : 'Wrapped up.'
+    return next ? `Wrapped up · ${moved} moved to the next session.` : 'Wrapped up.'
   }
   const r = await http(`/office_hours/${hoursId}/close`, { method: 'POST' })
   if (r.warning) return r.warning
-  return `Wrapped up. ${r.moved_count} waiting ${r.moved_count === 1 ? 'student' : 'students'} moved to the next session with a boost.`
+  return `Wrapped up · ${r.moved_count} moved to the next session.`
 }
 export const resetDemo = () => { localStorage.removeItem(KEY) }
+// Demo mode: give each of these courses an upcoming session (starting in 30 minutes) with
+// the sample questions, unless it already has one that isn't closed. The backend does the
+// same for its demo courses (DEMO_COURSES in backend/sample_questions.py).
+const DEMO_LOCATIONS = { 'COMPSCI 161': 'DBH 4011', 'COMPSCI 260P': 'ICS 432' }
+export function ensureDemoSessions(courses) {
+  if (live) return false
+  const s = load()
+  let made = false
+  for (const course of courses) {
+    if (s.sessions.some((x) => x.course === course && !x.closed_at)) continue
+    const h = { id: s.nextHours++, course, location: DEMO_LOCATIONS[course] || 'Office hours room', starts_at: inHours(0.5), ends_at: inHours(2.5), is_open: false, closed_at: null }
+    s.sessions.push(h); addSamples(s, h.id); made = true
+  }
+  if (made) save(s)
+  return made
+}
