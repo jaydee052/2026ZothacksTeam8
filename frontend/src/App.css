@@ -165,12 +165,15 @@ code { background: var(--card2); padding: 1px 6px; border-radius: 6px; font-size
 .dash .grow { gap: 8px; }
 .seclines { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; font-size: 14px; }
 
-/* ---- Student ask page: the question box and Save button stay in view while the line scrolls ---- */
-.grid.student > section.askcol { align-self: stretch; align-content: start; }
-/* The question box, the "maybe this helps" hint and the Save button stick together. */
+/* ---- Student ask page: the whole question column (heading, question box, hint and
+   Save button) stays in view under the nav bar while the line scrolls ---- */
 .askstick { display: grid; gap: 18px; }
 @media (min-width: 901px) {
-  .askstick { position: sticky; top: calc(var(--top-h, 64px) + 12px); z-index: 6; }
+  .grid.student > section.askcol {
+    position: sticky; top: calc(var(--top-h, 64px) + 12px); z-index: 6; align-self: start;
+    /* On a short screen the column scrolls on its own, so Save my spot is never cut off. */
+    max-height: calc(100vh - var(--top-h, 64px) - 24px); overflow-y: auto; overscroll-behavior: contain;
+  }
 }
 .savebar .fine { margin-top: 8px; }
 @media (max-width: 900px) {
