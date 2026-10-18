@@ -7,6 +7,7 @@ from flask_cors import CORS
 from db import get_db, init_db
 from llm import ai_status
 from overflow import close_expired_sessions
+from sample_questions import ensure_demo_sessions
 from routes import (
     buckets,
     categories,
@@ -44,10 +45,12 @@ app.register_blueprint(professors.bp)
 @app.before_request
 def auto_close_finished_sessions():
     """Before handling a request, close any session that ended a while ago
-    (see AUTO_CLOSE_AFTER in overflow.py), so the line is never stale."""
+    (see AUTO_CLOSE_AFTER in overflow.py), so the line is never stale. Then make
+    sure each demo course still has a session to show."""
     if request.path.startswith("/api/") and request.path != "/api/health":
         with get_db() as db:
-            if close_expired_sessions(db):
+            closed = close_expired_sessions(db)
+            if ensure_demo_sessions(db) or closed:
                 db.commit()
 
 

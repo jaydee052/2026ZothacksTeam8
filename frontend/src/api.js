@@ -328,3 +328,19 @@ export async function wrapUp() {
   return `Wrapped up · ${r.moved_count} moved to the next session.`
 }
 export const resetDemo = () => { localStorage.removeItem(KEY) }
+// Demo mode: give each of these courses an upcoming session (starting in 30 minutes) with
+// the sample questions, unless it already has one that isn't closed. The backend does the
+// same for its demo courses (DEMO_COURSES in backend/sample_questions.py).
+const DEMO_LOCATIONS = { 'COMPSCI 161': 'DBH 4011', 'COMPSCI 260P': 'ICS 432' }
+export function ensureDemoSessions(courses) {
+  if (live) return false
+  const s = load()
+  let made = false
+  for (const course of courses) {
+    if (s.sessions.some((x) => x.course === course && !x.closed_at)) continue
+    const h = { id: s.nextHours++, course, location: DEMO_LOCATIONS[course] || 'Office hours room', starts_at: inHours(0.5), ends_at: inHours(2.5), is_open: false, closed_at: null }
+    s.sessions.push(h); addSamples(s, h.id); made = true
+  }
+  if (made) save(s)
+  return made
+}

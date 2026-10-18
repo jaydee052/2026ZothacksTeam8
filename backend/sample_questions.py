@@ -1,5 +1,9 @@
 """Sample questions so every office hours line has something in it for demos.
 
+The demo courses (DEMO_COURSES below) always have a session to show: if one has
+no open or upcoming session, one is scheduled (see ensure_demo_sessions, run at
+startup and before each request in app.py).
+
 A session with fewer than MIN_GROUPS groups waiting is topped up from the list
 below when it's scheduled (see create_office_hours) and whenever the backend
 starts (see init_db). They're ordinary tickets: the professor helps them like
@@ -9,7 +13,9 @@ Each sample has its own category, so the line mixes long and short questions, an
 one group has two students, so grouping shows up too. The frontend's demo mode has
 the same list (SAMPLE_QUESTIONS in frontend/src/api.js); change both together.
 """
-from sqlalchemy import select
+from datetime import datetime, timedelta
+
+from sqlalchemy import func, select
 
 from models import Bucket, OfficeHours, Ticket
 from priority import score
@@ -69,3 +75,47 @@ def top_up_all(db):
     """Top up every session that isn't closed."""
     for session in db.scalars(select(OfficeHours).where(OfficeHours.closed_at.is_(None))).all():
         top_up(db, session)
+
+
+# Courses the demo professor and student share (frontend/src/config.js, Fall 2026).
+# Each always has an open or upcoming session, so there's a line to demo with.
+DEMO_COURSES = {
+    "COMPSCI 161": "DBH 4011",
+    "COMPSCI 260P": "ICS 432",
+}
+DEMO_START_IN = timedelta(minutes=30)
+DEMO_LENGTH = timedelta(hours=2)
+
+
+def ensure_demo_sessions(db):
+    """Schedule a session for any demo course with no open or upcoming one. It starts
+    30 minutes from now, takes in anyone left waiting from the course's last session
+    (like scheduling one by hand), and gets the sample questions. Returns how many
+    were made."""
+    from overflow import rehome_stranded  # overflow imports db.py, which imports this
+
+    made = 0
+    for course, location in DEMO_COURSES.items():
+        has_one = db.scalar(select(OfficeHours.id).where(
+            OfficeHours.course == course, OfficeHours.closed_at.is_(None)
+        ).limit(1))
+        if has_one:
+            continue
+        start = datetime.now().replace(second=0, microsecond=0) + DEMO_START_IN
+        # Start after the course's last session, so students left waiting there move in.
+        last = db.scalar(select(func.max(OfficeHours.starts_at)).where(OfficeHours.course == course))
+        if last and datetime.fromisoformat(last) >= start:
+            start = datetime.fromisoformat(last) + timedelta(minutes=1)
+        session = OfficeHours(
+            course=course,
+            location=location,
+            starts_at=start.isoformat(timespec="minutes"),
+            ends_at=(start + DEMO_LENGTH).isoformat(timespec="minutes"),
+            is_open=False,
+        )
+        db.add(session)
+        db.flush()
+        rehome_stranded(db, course)
+        top_up(db, session)
+        made += 1
+    return made

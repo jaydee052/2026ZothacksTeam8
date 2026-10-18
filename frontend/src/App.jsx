@@ -170,6 +170,8 @@ export default function App() {
     })
   }, [known]) // eslint-disable-line react-hooks/exhaustive-deps
   const colorOf = useCallback((c) => colors[c] ?? 0, [colors])
+  // Demo mode (no backend): make sure every class has a line to show.
+  useEffect(() => { if (ready && !live && known && api.ensureDemoSessions(known.split('|'))) refresh() }, [ready, live, known, sessions]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { document.documentElement.dataset.theme = theme }, [theme])
   useEffect(() => { if (toast) { const t = setTimeout(() => setToast(null), 3500); return () => clearTimeout(t) } }, [toast])

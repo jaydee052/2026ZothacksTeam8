@@ -4,9 +4,9 @@
 
 export const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5001/api'
 
-// Which term to read from the Anteater API. Fall 2024 is used because it has data.
+// Which term to read from the Anteater API.
 // The frontend asks Anteater directly, so the backend is not involved in class lookups.
-export const ANTEATER_TERM = { year: '2024', quarter: 'Fall' }
+export const ANTEATER_TERM = { year: '2026', quarter: 'Fall' }
 
 // Hardcoded student. Their classes are NOT listed here: on load the app looks up each
 // section code (CRN) below on the Anteater API and shows whatever comes back.
@@ -16,7 +16,7 @@ export const ANTEATER_TERM = { year: '2024', quarter: 'Fall' }
 export const CURRENT_STUDENT = {
   id: 1,
   name: 'Jordan Lee',
-  crns: ['36160', '35400'], // I&C SCI 46 Lec A, COMPSCI 260P Lec A (Fall 2024, both taught by Shindler)
+  crns: ['34190', '35400'], // COMPSCI 161 Lec A, COMPSCI 260P Lec A (Fall 2026, both taught by Shindler)
 }
 
 // Hardcoded professor. Their courses for the term come from the Anteater API,
