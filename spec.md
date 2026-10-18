@@ -44,7 +44,8 @@ Related docs:
 | "Jordan + 5 others" names on the professor view | n/a | In progress |
 | Classes from the Anteater API (students and professors) | Done | Planned |
 | Class pages, profile, color coding | n/a | In progress |
-| Time-block planning (up to 2 long questions per 15-minute block, filled with short ones) | Done | Shows the new order; block numbers and wait times planned |
+| Time-block planning (up to 2 long questions per 15-minute block, filled with short ones) | Done | Shows the new order; block numbers planned |
+| Estimated turn time ("Your turn: about 6:05 PM") | Done | Done (student's "Your spot" card) |
 | Syllabus upload | Planned | Planned |
 | TA queues | Planned (stretch) | Planned (stretch) |
 | Real login | Not started (a demo student is hardcoded) | Not started (demo student in `frontend/src/config.js`) |
@@ -59,7 +60,7 @@ Related docs:
 - Queue up **before** a session starts, so the line fills up ahead of time
 - See the questions already in line, with a **"Same question?" Join** button on each, and join that group instead of asking again
 - If they submit their own question anyway, the AI checks whether it's really new (planned, see "AI Grouping on Submit")
-- See the line and "You are #N"
+- See the line, "You are #N", and an **estimated turn time** ("Your turn: about 6:05 PM")
 - Leave the line: "Fixed it, thanks" (helped) or "Leave the line" (left without help)
 - Add classes by section code (looked up on the Anteater API)
 
@@ -211,6 +212,16 @@ Block 3 (15 min):  [Personal 10m][Scheduling 3m][Quick Q&A 2m]
 **Bumps:** bumping a question changes its score, so it can move to an earlier block or ahead of other questions of the same length. It doesn't put a short question ahead of a long one in the same block. To put a question at an exact spot, the professor drags (pins) it.
 
 Each student in line also gets `block` (which block they're in; empty for late and pinned students) and `eta_minutes` (rough minutes until their group's turn).
+
+## Estimated Turn Time
+
+Each student sees roughly when their turn will be, on their "Your spot" card: **"Your turn: about 6:05 PM"** (with the day if it isn't today).
+
+- **How it's worked out:** the minutes of everyone ahead (`eta_minutes`), added to the session's start time if it hasn't started yet, or to the current time once it's running.
+- **Rounded to 5 minutes,** since it's an estimate, and never before the session starts.
+- **Past the end:** if the turn would come after the session ends, the card says instead: "You may not be reached this session. If not, you'll move to the next session with a boost."
+- It's recalculated on every refresh, so it moves as students are helped, join groups or leave.
+- Its accuracy depends on the minutes per category, which are still estimates.
 
 ## Sessions (Office Hours)
 

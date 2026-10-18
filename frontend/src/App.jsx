@@ -10,6 +10,13 @@ const useStored = (k, d) => {
 }
 const ordinal = (n) => n + (['th', 'st', 'nd', 'rd'][(n % 100 >> 3) ^ 1 && n % 10 < 4 ? n % 10 : 0] || 'th')
 const when = (t) => new Date(t).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })
+// "6:05 PM" today, "Sat 6:05 PM" on another day. t is local time like "2026-10-18T18:05".
+const turnTime = (t) => {
+  const d = new Date(t)
+  return d.toDateString() === new Date().toDateString()
+    ? d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+    : when(t)
+}
 const words = (s) => s.toLowerCase().match(/[a-z]{4,}/g) || []
 const PALETTE = 6 // class colors cc-0 .. cc-5 in App.css
 
@@ -293,6 +300,8 @@ function Student({ queue, groups, cats, hours, act, live, ready, me, course, go 
   const pos = myGroupIdx + 1
   const wait = myGroupIdx < 0 ? 0 : groups.slice(0, myGroupIdx + 1).reduce((a, g) => a + g.mins, 0)
   const lateMine = myTickets.length > 0 && myTickets.every((t) => t.in_late_section)
+  // Estimated turn time from the backend (rounded to 5 minutes). Not in demo mode.
+  const myTurn = myTickets.find((t) => t.estimated_turn_at)
   // Where a brand-new question would land. Once the session is running it goes behind
   // everyone already waiting; before that, it's ranked by score among on-time questions.
   const c = cats[type]
@@ -400,7 +409,14 @@ function Student({ queue, groups, cats, hours, act, live, ready, me, course, go 
           <div className="card spot">
             <p className="muted">Your spot</p>
             <h2 className="big">{ordinal(pos)} in line</h2>
-            <p>About {wait} minutes. {groups[myGroupIdx].tickets.length > 1 && `You're sharing this with ${groups[myGroupIdx].tickets.length - 1} other.`}</p>
+            {myTurn?.past_session_end ? (
+              <p className="turn warn">You may not be reached this session. If not, you'll move to the next session with a boost.</p>
+            ) : myTurn ? (
+              <p className="turn">Your turn: about <b>{turnTime(myTurn.estimated_turn_at)}</b></p>
+            ) : (
+              <p>About {wait} minutes.</p>
+            )}
+            {groups[myGroupIdx].tickets.length > 1 && <p>You're sharing this with {groups[myGroupIdx].tickets.length - 1} other.</p>}
             {lateMine && <p className="muted">You joined after the session started, so you're behind everyone who was already waiting.</p>}
             <div className="btns">
               <button className="btn outline" onClick={() => finish('done')}>Fixed it, thanks</button>
