@@ -200,6 +200,8 @@ export async function loadProfessor(ucinetid) {
 }
 
 export async function probe() {
+  // The static demo has no backend to find; don't even ask.
+  if (import.meta.env.MODE === 'demo') return (live = false)
   try { await http('/health'); live = true } catch { live = false }
   return live
 }

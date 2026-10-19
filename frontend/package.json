@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "build:demo": "vite build --mode demo && node -e \"require('fs').copyFileSync('dist/index.html','dist/404.html')\"",
+    "preview:demo": "vite preview --mode demo"
   },
   "dependencies": {
     "@fontsource/barlow": "^5.1.1",

@@ -575,3 +575,19 @@ body:has(.floating), body:has(.lifted) { cursor: grabbing; user-select: none; }
 .now .post-body { padding: 7px 12px; }
 .now .post .avatar { width: 28px; height: 28px; font-size: 11px; }
 .now .post-q { font-size: 15px; }
+
+/* ---- Static demo: the front page linking to each demo page ---- */
+.demo-home { display: grid; gap: 28px; max-width: 920px; }
+.demo-intro { display: grid; gap: 10px; max-width: 60ch; }
+.demo-logo { font: 800 56px/1 "Barlow Condensed", "Barlow", sans-serif; letter-spacing: 0.01em; }
+.demo-intro p { font-size: 18px; color: var(--text-2); }
+.demo-intro .fine { font-size: 15px; color: var(--muted); }
+.demo-pages { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+.demo-page { display: block; height: 100%; color: inherit; text-decoration: none; border-radius: var(--r-lg); }
+.demo-page .card { height: 100%; transition: transform 0.15s, box-shadow 0.15s; }
+.demo-page:hover .card { transform: translateY(-2px); box-shadow: var(--shadow-2); }
+.demo-page .card-body { gap: 8px; }
+.demo-page h2 { font-size: 24px; }
+.demo-page p { color: var(--text-2); }
+.demo-open { display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; font-weight: 700; color: var(--primary-ink); }
+@media (max-width: 640px) { .demo-logo { font-size: 44px; } }

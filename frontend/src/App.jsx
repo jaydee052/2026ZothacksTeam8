@@ -135,14 +135,50 @@ function useQueue(course) {
 //   /professor                   the professor
 // Anything else (like "/") shows the first student. Like the real app, a page never
 // links to another role: the nav bar has no student/professor switch.
-const pathOf = (r) => (r.role === 'professor' ? '/professor' : `/student/${r.studentId}`)
+// The static demo (npm run build:demo) lives under a subpath (BASE), and its "/" is a
+// page linking to each of the others, since visitors can't guess the addresses.
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, '')
+const DEMO = import.meta.env.MODE === 'demo'
+const pathOf = (r) => BASE + (r.role === 'home' ? '/' : r.role === 'professor' ? '/professor' : `/student/${r.studentId}`)
 function readRoute() {
-  const m = window.location.pathname.match(/^\/(student|professor)(?:\/(\d+))?\/?$/)
+  const path = window.location.pathname.slice(BASE.length) || '/'
+  if (DEMO && path === '/') return { role: 'home' }
+  const m = path.match(/^\/(student|professor)(?:\/(\d+))?\/?$/)
   const id = Number(m?.[2])
   return {
     role: m?.[1] === 'professor' ? 'professor' : 'student',
     studentId: STUDENTS.some((x) => x.id === id) ? id : STUDENTS[0].id,
   }
+}
+
+// The static demo's front page: one ticket per page, each opening it.
+function DemoHome() {
+  const pages = [
+    ...STUDENTS.map((s) => ({ href: pathOf({ role: 'student', studentId: s.id }), who: s.name, what: 'Student', note: 'Join the line for office hours, ask a question, or join a group with the same one.' })),
+    { href: pathOf({ role: 'professor' }), who: 'Professor', what: 'Professor', note: 'Schedule office hours and work through the line: help, pass to a TA, or reorder.' },
+  ]
+  return (
+    <main className="shell demo-home">
+      <header className="demo-intro">
+        <h1 className="demo-logo"><span className="logo-zot">Zot</span>Hours</h1>
+        <p>Office hours without the crowd at the door. This is a demo: everything runs in your browser and is saved only there.</p>
+        <p className="fine">Tip: open a student and the professor in two tabs side by side to watch the line update.</p>
+      </header>
+      <ul className="demo-pages">
+        {pages.map((p, i) => (
+          <li key={p.href}>
+            <a className="demo-page" href={p.href}>
+              <Card color={i} head={<span>{p.what}</span>}>
+                <h2>{p.who}</h2>
+                <p>{p.note}</p>
+                <span className="demo-open">Open <Icon name="arrow" size={16} /></span>
+              </Card>
+            </a>
+          </li>
+        ))}
+      </ul>
+    </main>
+  )
 }
 
 export default function Root() {
@@ -153,6 +189,7 @@ export default function Root() {
     window.addEventListener('popstate', onBack)
     return () => window.removeEventListener('popstate', onBack)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  if (route.role === 'home') return <DemoHome />
   const student = STUDENTS.find((x) => x.id === route.studentId)
   // A fresh App per page, so each profile loads and keeps its own classes and questions.
   return <App key={pathOf(route)} role={route.role} student={student} />
