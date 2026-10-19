@@ -266,6 +266,11 @@ export async function resolveGroup(bucketId, tickets) {
   }
   await Promise.all(tickets.map((t) => update(t.id, { status: 'done' })))
 }
+// Professor hands a group to a TA. There's no TA queue yet, so for now this just takes
+// the group out of the line (marked done, like resolveGroup). Swap in the real handoff here.
+export async function passToTA(bucketId, tickets) {
+  return resolveGroup(bucketId, tickets)
+}
 // Student leaves the line without being helped (status "left").
 export async function leave(id) {
   if (live) return http(`/queue/${id}/leave`, { method: 'POST' })
