@@ -275,16 +275,18 @@ function App({ role, student }) {
         {!onHome && <Back go={goHome} label={role === 'professor' ? 'All courses' : 'All classes'} />}
         {role === 'professor' ? (
           view === 'course' && curProClass ? (
-            <Professor {...{ groups, queue, cats, hours, act, live, ready, courses: proCourseLabels, course: curProClass, info: proCourses.find((c) => c.course === curProClass), setProClass: openCourse }} />
+            ready
+              ? <Professor {...{ groups, queue, cats, hours, act, live, ready, courses: proCourseLabels, course: curProClass, info: proCourses.find((c) => c.course === curProClass), setProClass: openCourse }} />
+              : <Loading what="the queue" layout="pro" />
           ) : (
-            <ProHome {...{ prof, profError, sessions, openCourse }} />
+            <ProHome {...{ prof, profError, sessions: ready ? sessions : null, openCourse }} />
           )
         ) : view === 'profile' ? (
           <Profile {...{ me, classes, enrollment, enrollError, addClass, removeClass }} />
         ) : view === 'class' && cur ? (
-          <Student {...studentProps} />
+          ready ? <Student {...studentProps} /> : <Loading what="the line" layout="student" />
         ) : (
-          <StudentHome {...{ classes, enrollment, enrollError, sessions, openClass }} />
+          <StudentHome {...{ classes, enrollment, enrollError, sessions: ready ? sessions : null, openClass }} />
         )}
       </main>
       <div className="toaster" role="status" aria-live="polite">
@@ -393,7 +395,9 @@ function CourseCode({ course }) {
   return <span className="course-code"><i aria-hidden="true" />{course}</span>
 }
 
+// sessions is null until the first load.
 function sessionLine(sessions, course) {
+  if (!sessions) return <span className="sk-text">Loading sessions…</span>
   const s = api.bestSession(sessions, course)
   if (!s) return 'No sessions yet'
   const waiting = s.waiting_count != null ? ` · ${s.waiting_count} waiting` : ''
@@ -407,8 +411,44 @@ function Status({ enrollment, enrollError, what }) {
   return <LoadNotice error={enrollError} what={what} />
 }
 
-// Loading spinner, or the error with a note that it's retrying.
+// Loading: blank tickets with shimmering lines where the data will go. layout="pro" or
+// "student" sketches a class page (the big ticket and the line); without it, a few course
+// tickets. It fades in after a moment, so a quick load doesn't flash it.
+function Loading({ what, layout }) {
+  const lines = (...widths) => widths.map((w, i) => <span key={i} className="sk" style={{ width: w }} />)
+  const ticket = (key, big) => (
+    <Card key={key} tear={big ? 'head' : 'foot'} className={`load-ticket${big ? ' big' : ''}`} head={lines('30%')} foot={lines('24%')}>
+      <span className="sk sk-title" />
+      {lines('85%', '55%')}
+    </Card>
+  )
+  return (
+    <div className="loading" role="status">
+      <p className="load-msg"><span className="spinner" aria-hidden="true" />Loading {what}…</p>
+      {layout ? (
+        <div className={`layout ${layout}`} aria-hidden="true">
+          <div className="lead">{ticket('now', true)}</div>
+          <div className="side">
+            <div className="card line">
+              {lines('40%')}
+              <ol className="stubs">
+                {[0, 1, 2].map((i) => (
+                  <li key={i}><div className="qrow load-row"><span className="qrow-grip" /><div className="qrow-main">{lines('80%', '45%')}</div></div></li>
+                ))}
+              </ol>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="wallet" aria-hidden="true">{[0, 1].map((i) => ticket(i))}</div>
+      )}
+    </div>
+  )
+}
+
+// Loading tickets, or the error with a note that it's retrying.
 function LoadNotice({ error, what }) {
+  if (!error) return <Loading what={what} />
   return (
     <div className={`notice${error ? ' error' : ''}`} role="status">
       {error ? <span className="notice-icon"><Icon name="alert" /></span> : <span className="spinner" aria-hidden="true" />}
@@ -464,7 +504,7 @@ function AddClass({ addClass }) {
 // One class or course as a card. The whole card opens it.
 function CourseTicket({ course, title, sections, sessions, action, onOpen }) {
   const colorOf = useContext(Colors)
-  const s = api.bestSession(sessions, course)
+  const s = sessions && api.bestSession(sessions, course)
   return (
     <li>
       <Card
@@ -541,13 +581,13 @@ function Profile({ me, classes, enrollment, enrollError, addClass, removeClass }
 
 function ProHome({ prof, profError, sessions, openCourse }) {
   const courses = prof?.courses ?? []
-  const waiting = courses.reduce((a, c) => a + (api.bestSession(sessions, c.course)?.waiting_count ?? 0), 0)
+  const waiting = courses.reduce((a, c) => a + (api.bestSession(sessions ?? [], c.course)?.waiting_count ?? 0), 0)
   return (
     <section className="page">
       <div className="page-head">
         <p className="eyebrow">{prof ? `${prof.quarter} ${prof.year}` : 'This quarter'}</p>
         <h1>Your courses</h1>
-        {prof && <p>{prof.name} · <b>{waiting} waiting</b> across all courses</p>}
+        {prof && <p>{prof.name}{sessions && <> · <b>{waiting} waiting</b> across all courses</>}</p>}
       </div>
       {!prof && <LoadNotice error={profError} what="your courses" />}
       {prof && courses.length === 0 && <p className="notice">No lecture courses in {prof.quarter} {prof.year}.</p>}
@@ -1265,7 +1305,7 @@ function Professor({ groups, queue, cats, hours, act, live, ready, courses, cour
           <div className={`card line${drag?.from === 0 && !drag.dropping ? (drag.to > 0 ? ' drop-into' : ' drop-ready') : ''}`}>
             <div className="line-head">
               <div>
-                <h2 id="after-h">After that</h2>
+                <h2 id="after-h">Current Queue</h2>
                 {rest.length === 0 && <p>Nobody else is waiting.</p>}
               </div>
               {rest.length > 0 && <span className="count-pill">{rest.length}</span>}
