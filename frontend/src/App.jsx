@@ -1,4 +1,4 @@
-import { Fragment, createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import * as api from './api.js'
 import { CURRENT_PROFESSOR, STUDENTS } from './config.js'
@@ -263,8 +263,8 @@ function App({ role, student }) {
     <Colors.Provider value={colorOf}>
       <header className="top" ref={topRef}>
         <div className="top-in">
-          <button className="logo" aria-current={onHome ? 'page' : undefined} onClick={goHome}>
-            <span className="logo-mark" aria-hidden="true"><Icon name="queue" size={18} /></span>zot hours
+          <button className="logo" aria-current={onHome ? 'page' : undefined} onClick={goHome} title={role === 'professor' ? 'All courses' : 'All classes'}>
+            <span className="logo-zot">Zot</span>Hours
           </button>
           <span className="role-tag">{role === 'professor' ? 'Instructor' : 'Student'}</span>
           <div className="top-status">
@@ -284,11 +284,12 @@ function App({ role, student }) {
         </div>
       </header>
       <main className="shell">
-        {!onHome && <Back go={goHome} label={role === 'professor' ? 'All courses' : 'All classes'} />}
+        {/* Class pages have their own back button, next to the course strip. */}
+        {view === 'profile' && role === 'student' && <Back go={goHome} label="All classes" />}
         {role === 'professor' ? (
           view === 'course' && curProClass ? (
             ready
-              ? <Professor {...{ groups, queue, cats, hours, act, live, ready, courses: proCourseLabels, course: curProClass, info: proCourses.find((c) => c.course === curProClass), setProClass: openCourse }} />
+              ? <Professor {...{ groups, queue, cats, hours, act, live, ready, courses: proCourseLabels, course: curProClass, info: proCourses.find((c) => c.course === curProClass), setProClass: openCourse, goHome }} />
               : <Loading what="the queue" layout="pro" />
           ) : (
             <ProHome {...{ prof, profError, sessions: ready ? sessions : null, openCourse }} />
@@ -328,11 +329,12 @@ function Icon({ name, size = 18 }) {
     info: <><circle cx="12" cy="12" r="9" /><path d="M12 11v5.5M12 7.5v.01" /></>,
     clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
     pin: <><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z" /><circle cx="12" cy="9.5" r="2.5" /></>,
+    chat: <path d="M4 5h16v11H9l-5 4z" />,
+    down: <path d="M6 9l6 6 6-6" />,
     person: <><circle cx="12" cy="7" r="3.5" /><path d="M5.5 20a6.5 6.5 0 0 1 13 0" /></>,
     users: <><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18 14.2a6.5 6.5 0 0 1 3.5 5.8" /></>,
     sun: <><circle cx="12" cy="12" r="4" /><path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4L6 18M18 6l1.4-1.4" /></>,
     moon: <path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z" />,
-    queue: <><path d="M4 7h16M4 12h11M4 17h7" /></>,
     plus: <path d="M12 5v14M5 12h14" />,
     inbox: <><path d="M3 13l3-8h12l3 8v6H3z" /><path d="M3 13h5l1.5 3h5L16 13h5" /></>,
     // Points left, the way a ticket goes when it's passed to a TA.
@@ -409,16 +411,20 @@ function CourseCode({ course }) {
 
 // The top of a class page in one line, shaped like a ticket: the course code on a color stub,
 // then the title and where/when, then anything else (the professor's figures and session button).
-function CourseStrip({ course, title, hours, heading: Heading = 'p', children }) {
+// onBack: a back button on its left (to all classes), in the same row, so it takes no line of its own.
+function CourseStrip({ course, title, hours, heading: Heading = 'p', onBack, backLabel, children }) {
   const colorOf = useContext(Colors)
   return (
-    <div className={`course-strip cc cc-${colorOf(course)}`}>
-      <span className="cs-code"><CourseCode course={course} /></span>
-      <div className="cs-main">
-        {title && <Heading className="cs-title">{title}</Heading>}
-        {hours && <span className="class-where"><Icon name="pin" size={15} />{hours.location} · {when(hours.starts_at)}</span>}
+    <div className="strip-row">
+      {onBack && <button className="strip-back" onClick={onBack} aria-label={backLabel} title={backLabel}><Icon name="back" size={22} /></button>}
+      <div className={`course-strip cc cc-${colorOf(course)}`}>
+        <span className="cs-code"><CourseCode course={course} /></span>
+        <div className="cs-main">
+          {title && <Heading className="cs-title">{title}</Heading>}
+          {hours && <span className="class-where"><Icon name="pin" size={15} />{hours.location} · {when(hours.starts_at)}</span>}
+        </div>
+        {children}
       </div>
-      {children}
     </div>
   )
 }
@@ -537,7 +543,7 @@ function CourseTicket({ course, title, sections, sessions, action, onOpen }) {
     <li>
       <Card
         color={colorOf(course)} className={`course-card${s?.state === 'running' ? ' is-live' : ''}`}
-        head={<><CourseCode course={course} />{s?.state === 'running' && <span className="chip live"><i aria-hidden="true" />Open now</span>}</>}
+        head={<CourseCode course={course} />}
         foot={<>
           <span className="session-line"><Icon name="clock" size={16} />{sessionLine(sessions, course)}</span>
           <span className="foot-row">
@@ -644,7 +650,7 @@ function Stub({ g, n, cats, mine, handle, actions, children, className = '', ...
 
 // One group in the professor's line: a grip on the left (in the category color) for
 // dragging, the question with its time top right, then who's asking and the actions.
-function QueueRow({ g, cats, grip, actions, children, className = '', ...rest }) {
+function QueueRow({ g, cats, grip, actions, extra, children, className = '', ...rest }) {
   return (
     <div className={`qrow cc cc-${catColor(g.type, cats)} ${className}`} {...rest}>
       {grip ?? <span className="qrow-grip" aria-hidden="true"><Icon name="grip" size={16} /></span>}
@@ -657,6 +663,76 @@ function QueueRow({ g, cats, grip, actions, children, className = '', ...rest })
           <p className="stub-meta">{children}</p>
           {actions && <div className="stub-actions">{actions}</div>}
         </div>
+        {extra}
+      </div>
+    </div>
+  )
+}
+
+// Every student's own wording of a group's question, as posts in a thread, so the professor
+// sees what each one is actually stuck on. Collapsible. mini: the compact one on a queue ticket.
+function Forum({ g, mini = false, startOpen = false }) {
+  const [open, setOpen] = useState(startOpen)
+  const id = useId()
+  const n = g.tickets.length
+  const same = (t) => t.question.trim().toLowerCase() === g.title.trim().toLowerCase()
+  // Whoever joined with "Same question" (no wording of their own) is added to the first post's
+  // names, like "+ 1 other"; only students with their own wording get a post.
+  const metoo = g.tickets.slice(1).filter(same)
+  const list = [g.tickets[0], ...g.tickets.slice(1).filter((t) => !same(t))]
+  // The big forum scrolls on its own; the ticket around it never does. It shows at least two
+  // and a half posts (measured, so long questions count), up to 204px, less only if the column
+  // it's in would otherwise overflow. Then the column scrolls, as a last resort.
+  const posts = useRef(null)
+  useLayoutEffect(() => {
+    const ol = posts.current, lead = ol?.closest('.lead')
+    if (mini || !open || !ol) return
+    const fit = () => {
+      const li = ol.children
+      const floor = li.length > 2 ? li[2].offsetTop - ol.offsetTop + li[2].offsetHeight / 2 : ol.scrollHeight
+      let room = Infinity
+      if (lead && getComputedStyle(lead).overflowY === 'auto') {
+        const last = lead.lastElementChild
+        const used = last.offsetTop + last.offsetHeight + parseFloat(getComputedStyle(lead).paddingBottom)
+        room = ol.clientHeight + lead.clientHeight - used
+      }
+      ol.style.maxHeight = `${Math.ceil(Math.max(floor, Math.min(204, room)))}px`
+      edges()
+    }
+    // Which ends have more posts past them, so CSS can fade those ends out.
+    const edges = () => {
+      ol.classList.toggle('more-up', ol.scrollTop > 1)
+      ol.classList.toggle('more-down', ol.scrollTop + ol.clientHeight < ol.scrollHeight - 1)
+    }
+    fit()
+    const ro = new ResizeObserver(fit)
+    if (lead) ro.observe(lead)
+    for (const li of ol.children) ro.observe(li)
+    ol.addEventListener('scroll', edges, { passive: true })
+    return () => { ro.disconnect(); ol.removeEventListener('scroll', edges); ol.style.maxHeight = ''; ol.classList.remove('more-up', 'more-down') }
+  }, [mini, open, list.length])
+  return (
+    <div className={`forum${mini ? ' mini' : ''}${open ? ' open' : ''}`}>
+      <button type="button" className="forum-toggle" aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}>
+        <Icon name="chat" size={mini ? 14 : 16} />{list.length} {list.length === 1 ? 'question' : 'questions'} · {n} students<Icon name="down" size={mini ? 14 : 16} />
+      </button>
+      <div className="forum-body" id={id} inert={!open}>
+        <ol className="forum-posts" ref={posts}>
+          {list.map((t, i) => (
+            <li key={t.id} className="post">
+              {!mini && <span className="avatar" aria-hidden="true">{initials(t.student_name)}</span>}
+              <div className="post-body">
+                <p className="post-meta">
+                  <b>{i === 0 ? <Names tickets={[t, ...metoo]} /> : t.student_name}</b>
+                  {!mini && t.class_section && <span> · {t.class_section}</span>}
+                  {!mini && t.created_at && <span> · {clock(new Date(t.created_at))}</span>}
+                  {i === 0 && <span className="post-tag">Asked first</span>}
+                </p>
+                <p className="post-q">{t.question}</p>
+              </div>
+            </li>
+          ))}
+        </ol>
       </div>
     </div>
   )
@@ -774,13 +850,13 @@ function Student({ queue, groups, cats, hours, act, live, ready, me, course, tit
     setConfirm(false)
     return act(async () => {
       const t = await api.join({ student_name: me.name.trim(), class_section: me.section.trim(), question: q.trim(), bucket_id, office_hours_id: hours?.id })
-      setMine((m) => [...m, { id: t.id, name: me.name.trim() }]); setQ(''); setAsking(false)
+      setMine((m) => [...m, { id: t.id, name: me.name.trim(), q: q.trim(), course, at: new Date().toISOString() }]); setQ(''); setAsking(false)
     }, 'Spot saved.')
   }
   // "Same question?" on a stub in the line: join that group as it is.
   const joinGroup = (g) => act(async () => {
     const t = await api.join({ student_name: me.name.trim(), class_section: me.section.trim(), bucket_id: g.id, office_hours_id: hours?.id })
-    setMine((m) => [...m, { id: t.id, name: me.name.trim() }])
+    setMine((m) => [...m, { id: t.id, name: me.name.trim(), q: g.title, course, at: new Date().toISOString() }])
   }, 'Joined the group.')
   // A new question in a session that already started goes to the back, so ask first.
   const startNew = () => (running ? setConfirm(true) : submit())
@@ -800,6 +876,16 @@ function Student({ queue, groups, cats, hours, act, live, ready, me, course, tit
       await Promise.all(ts.map((t) => (kind === 'done' ? api.update(t.id, { status: 'done' }) : api.leave(t.id))))
     }, kind === 'done' ? 'Marked as fixed.' : 'You left the line.')
   }
+
+  // Every question this student submitted in this class, newest first: still in line (with its
+  // place) or done. Entries saved before this list existed have no text or class; they show
+  // only while their ticket is still in line.
+  const history = [...mine].reverse().map((m) => {
+    const ticket = myTickets.find((t) => t.id === m.id)
+    if (!ticket && m.course !== course) return null
+    const gi = ticket ? groups.findIndex((g) => g.id === ticket.bucket_id) : -1
+    return { id: m.id, ticket, text: ticket?.question ?? m.q, at: ticket?.created_at ?? m.at, place: gi + 1, size: gi >= 0 ? groups[gi].tickets.length : 0 }
+  }).filter((h) => h && h.text).slice(0, 10)
 
   if (!course) return null
   const showForm = !myGroup || asking
@@ -831,19 +917,6 @@ function Student({ queue, groups, cats, hours, act, live, ready, me, course, tit
               <span>{me.name.trim() || 'nobody yet'}{me.section.trim() && ` · ${me.section.trim()}`}</span>
               <span id="wordcount" className={`count${over ? ' bad' : ''}`}>{n}/25 words{over && ' · shorten it a little'}</span>
             </div>
-            {similar && (
-              <div className="callout info">
-                <span className="callout-icon" aria-hidden="true"><Icon name="users" /></span>
-                <div className="callout-body">
-                  <h3>Similar question in line</h3>
-                  <p>“{similar.title}” · {similar.count} waiting</p>
-                  <div className="btns">
-                    <button className="btn primary" disabled={!ok} onClick={() => submit(similar.id)}>Join group</button>
-                    <button className="btn outline" disabled={!ok} onClick={startNew}>Ask separately</button>
-                  </div>
-                </div>
-              </div>
-            )}
             {confirm ? (
               <div className="callout warn" role="alertdialog" aria-labelledby="started-h" tabIndex={-1} ref={confirmRef}>
                 <span className="callout-icon" aria-hidden="true"><Icon name="alert" /></span>
@@ -855,6 +928,24 @@ function Student({ queue, groups, cats, hours, act, live, ready, me, course, tit
                     <button className="btn outline" onClick={() => setConfirm(false)}>Cancel</button>
                   </div>
                 </div>
+              </div>
+            ) : similar ? (
+              // A similar question is in line: joining it and asking separately take the place
+              // of the Save button, side by side, so the form doesn't grow.
+              <div className="save similar">
+                <div className="callout info">
+                  <span className="callout-icon" aria-hidden="true"><Icon name="users" /></span>
+                  <div className="callout-body">
+                    <h3>Similar question in line</h3>
+                    <p>“{similar.title}” · {similar.count} waiting</p>
+                  </div>
+                </div>
+                <div className="save-split">
+                  <button className="btn accent" disabled={!ok} onClick={() => submit(similar.id)}>Join their group</button>
+                  <button className="btn outline" disabled={!ok} onClick={startNew}>Ask separately</button>
+                </div>
+                {!ok && <p className="fine">{why}</p>}
+                {asking && <button className="link" onClick={() => setAsking(false)}>Back to your spot</button>}
               </div>
             ) : (
               <div className="save">
@@ -871,7 +962,7 @@ function Student({ queue, groups, cats, hours, act, live, ready, me, course, tit
 
   return (
     <div className="class-page">
-      <CourseStrip course={course} title={title} hours={hours} />
+      <CourseStrip course={course} title={title} hours={hours} onBack={() => go('home')} backLabel="All classes" />
       <div className="layout student">
         <section className="lead" aria-label="Your spot">
           {showForm ? form : (
@@ -882,7 +973,7 @@ function Student({ queue, groups, cats, hours, act, live, ready, me, course, tit
               </div>
               <Card
                 key={latest.id} color={colorOf(course)} className="spot-card print"
-                head={<><CourseCode course={course} /><span className="chip">{lateMine ? 'Joined late' : 'In line'}</span></>}
+                head={<><CourseCode course={course} /><span className="chip">{pos === 1 ? 'Current' : lateMine ? 'Joined late' : 'In line'}</span></>}
                 foot={<>
                   <div className="fields">
                     <div className="f"><small>Group</small><strong>{myGroup.tickets.length > 1 ? `+${myGroup.tickets.length - 1}` : 'Just you'}</strong></div>
@@ -895,11 +986,17 @@ function Student({ queue, groups, cats, hours, act, live, ready, me, course, tit
                   <div className="f turn"><small>Turn</small><strong>{clock(turnAt)}</strong><span>about {wait} min</span></div>
                 </div>
                 <div className="progress" aria-hidden="true"><span style={{ width: `${Math.max(6, ((groups.length - pos + 1) / Math.max(groups.length, 1)) * 100)}%` }} /></div>
-                <p className="my-meta">{pos === 1 ? "You're next" : `${plural(pos - 1, 'group', 'groups')} ahead of you`}</p>
+                <p className="my-meta">{pos === 1 ? "You're current" : `${plural(pos - 1, 'group', 'groups')} ahead of you`}</p>
                 <div className="my-q-wrap">
                   <small>Your question</small>
-                  <p className="my-q">{myGroup.title}</p>
-                  {myGroup.tickets.length > 1 && <p className="my-meta">With {plural(myGroup.tickets.length - 1, 'other', 'others')}</p>}
+                  {/* Their own wording; the group's question shows under it when it differs. */}
+                  <p className="my-q">{latest.question}</p>
+                  {myGroup.tickets.length > 1 && (
+                    <p className="my-meta">
+                      With {plural(myGroup.tickets.length - 1, 'other', 'others')}
+                      {latest.question.trim().toLowerCase() !== myGroup.title.trim().toLowerCase() && <> · grouped under “{myGroup.title}”</>}
+                    </p>
+                  )}
                   {lateMine && <p className="my-meta">Joined late · behind on-time questions</p>}
                 </div>
               </Card>
@@ -909,6 +1006,25 @@ function Student({ queue, groups, cats, hours, act, live, ready, me, course, tit
                 <button className="btn quiet danger push" onClick={() => finish('left')}>Leave the line</button>
               </div>
             </>
+          )}
+          {history.length > 0 && (
+            <div className="card my-questions">
+              <div className="section-head"><h2>Your questions</h2><span className="count-pill">{history.length}</span></div>
+              <ol className="myq-list">
+                {history.map((h) => (
+                  <li key={h.id} className={`myq${h.ticket ? ' active' : ''}${h.id === latest?.id && !showForm ? ' shown' : ''}`}>
+                    <p className="myq-q">{h.text}</p>
+                    <p className="myq-meta">
+                      {h.ticket
+                        ? <span className="myq-status">{h.place === 1 ? 'Current' : `${ordinal(h.place)} in line`}</span>
+                        : <span className="myq-status done">Done</span>}
+                      {h.size > 1 && <span>with {plural(h.size - 1, 'other', 'others')}</span>}
+                      {h.at && <span>asked {clock(new Date(h.at))}</span>}
+                    </p>
+                  </li>
+                ))}
+              </ol>
+            </div>
           )}
         </section>
 
@@ -1001,7 +1117,7 @@ function morph(el, from, ghost, live = false) {
 }
 const moveDrag = (d, clientX, clientY) => ({ ...d, x: clientX, y: clientY, s: window.scrollY, to: dropIndex(d, clientX + window.scrollX, clientY + window.scrollY) })
 
-function Professor({ groups, queue, cats, hours, act, live, ready, courses, course, info, setProClass }) {
+function Professor({ groups, queue, cats, hours, act, live, ready, courses, course, info, setProClass, goHome }) {
   const colorOf = useContext(Colors)
   const [helped, setHelped] = useStored('zh.helped', 0)
   const [form, setForm] = useState(null)
@@ -1230,7 +1346,7 @@ function Professor({ groups, queue, cats, hours, act, live, ready, courses, cour
   // drawn, inert, as the preview of a row carried over Next up.
   const nowParts = (g, i) => ({
     color: catColor(g.type, cats), tear: 'head',
-    head: <><span className="now-label"><span className="pulse" aria-hidden="true" />Next up</span><span className="now-head-right"><span className="tag">{cats[g.type]?.label || g.type}</span><span className="qrow-time"><Icon name="clock" size={14} />~{g.mins} min</span></span></>,
+    head: <><span className="now-label"><span className="pulse" aria-hidden="true" />Current</span><span className="now-head-right"><span className="tag">{cats[g.type]?.label || g.type}</span><span className="qrow-time"><Icon name="clock" size={14} />~{g.mins} min</span></span></>,
     foot: <>
       <div className="tools">
         <button className="grip" {...handleProps(g, i)}><Icon name="grip" /></button>
@@ -1246,6 +1362,7 @@ function Professor({ groups, queue, cats, hours, act, live, ready, courses, cour
       <h2 className="now-q">{g.title}</h2>
       <p className="now-who"><Icon name="users" size={16} /><Names tickets={g.tickets} /></p>
       {g.solo > g.mins && <p className="now-time"><Icon name="users" size={16} />Helping them together saves {g.solo - g.mins} min</p>}
+      {g.tickets.length > 1 && <Forum g={g} startOpen />}
     </>,
   })
   const dragClass = (i) => {
@@ -1290,7 +1407,7 @@ function Professor({ groups, queue, cats, hours, act, live, ready, courses, cour
         ))}
       </div>
 
-      <CourseStrip course={course} title={info?.course_title || course} hours={hours} heading="h1">
+      <CourseStrip course={course} title={info?.course_title || course} hours={hours} heading="h1" onBack={goHome} backLabel="All courses">
         <dl className="cs-stats">
           <div title={plural(queue.length, 'student', 'students')}><dt>Waiting</dt><dd>{queue.length}</dd></div>
           <div title="Groups in line"><dt>Groups</dt><dd>{groups.length}</dd></div>
@@ -1302,7 +1419,7 @@ function Professor({ groups, queue, cats, hours, act, live, ready, courses, cour
       </CourseStrip>
 
       <div className="layout pro">
-        <section className="lead" aria-label="Next up">
+        <section className="lead" aria-label="Current">
           {first ? (<>
             <div className={`swipe now-swipe${firstSwipe.wrap}`} key={first.id}>
               <SwipeBg dir={firstSwipe.dir} ready={firstSwipe.ready} />
@@ -1343,7 +1460,7 @@ function Professor({ groups, queue, cats, hours, act, live, ready, courses, cour
                     <li className={`swipe${sv.wrap}${dragClass(i)}`} style={dragStyle(i)} ref={(el) => { refs.current[i] = el }}>
                       <SwipeBg dir={sv.dir} ready={sv.ready} />
                       <QueueRow
-                        g={g} cats={cats} className={`swipe-card${sv.cls}`}
+                        g={g} cats={cats} className={`swipe-card${sv.cls}`} extra={g.tickets.length > 1 && <Forum g={g} mini />}
                         style={sv.style} {...swipeProps(g)}
                         grip={<button className="qrow-grip handle" {...handleProps(g, i)}><Icon name="grip" size={16} /></button>}
                         actions={<>
