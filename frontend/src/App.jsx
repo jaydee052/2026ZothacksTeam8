@@ -314,13 +314,15 @@ function Icon({ name, size = 18 }) {
     info: <><circle cx="12" cy="12" r="9" /><path d="M12 11v5.5M12 7.5v.01" /></>,
     clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
     pin: <><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z" /><circle cx="12" cy="9.5" r="2.5" /></>,
+    person: <><circle cx="12" cy="7" r="3.5" /><path d="M5.5 20a6.5 6.5 0 0 1 13 0" /></>,
     users: <><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18 14.2a6.5 6.5 0 0 1 3.5 5.8" /></>,
     sun: <><circle cx="12" cy="12" r="4" /><path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4L6 18M18 6l1.4-1.4" /></>,
     moon: <path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z" />,
     queue: <><path d="M4 7h16M4 12h11M4 17h7" /></>,
     plus: <path d="M12 5v14M5 12h14" />,
     inbox: <><path d="M3 13l3-8h12l3 8v6H3z" /><path d="M3 13h5l1.5 3h5L16 13h5" /></>,
-    handoff: <><circle cx="8" cy="7" r="3.2" /><path d="M2.5 19a5.5 5.5 0 0 1 11 0M15 12h6.5M18.5 9l3 3-3 3" /></>,
+    // Points left, the way a ticket goes when it's passed to a TA.
+    handoff: <><circle cx="16" cy="7" r="3.2" /><path d="M10.5 19a5.5 5.5 0 0 1 11 0M9 12H2.5M5.5 9l-3 3 3 3" /></>,
   }
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={`icon-${name}`}>
@@ -348,10 +350,26 @@ function Back({ go, label }) {
 // line (punched notches on both edges) and the stub. Classes, courses and a place in line
 // are all tickets.
 // tear="head" puts the tear line under the head band instead (Next up tears off at the top).
-function Card({ color, head, children, foot, tear = 'foot', className = '', ...rest }) {
+// --perf-y (the tear line's height in the card) lets CSS cut the notches out of the card itself.
+function Card({ color, head, children, foot, tear = 'foot', className = '', ref, ...rest }) {
+  const own = useRef(null)
+  useLayoutEffect(() => {
+    const card = own.current, line = card?.querySelector(':scope > .perf')
+    if (!line) return
+    const place = () => card.style.setProperty('--perf-y', `${card.clientTop + line.offsetTop + 1}px`)
+    place()
+    const ro = new ResizeObserver(place)
+    ro.observe(card)
+    return () => ro.disconnect()
+  }, [])
+  const setRef = (el) => {
+    own.current = el
+    if (typeof ref === 'function') ref(el)
+    else if (ref) ref.current = el
+  }
   const perf = <div className="perf" aria-hidden="true" />
   return (
-    <article className={`card${color != null ? ` cc cc-${color}` : ''} tear-${tear} ${className}`} {...rest}>
+    <article ref={setRef} className={`card${color != null ? ` cc cc-${color}` : ''} tear-${tear} ${className}`} {...rest}>
       {head && <div className="card-head">{head}</div>}
       {head && tear === 'head' && perf}
       <div className="card-body">{children}</div>
@@ -581,7 +599,7 @@ function SwipeBg({ dir, ready }) {
   return (
     <div className={`swipe-bg${dir ? ` to-${dir}` : ''}${ready ? ' ready' : ''}`} aria-hidden="true">
       <span className="sb-help"><Icon name="check" />Helped</span>
-      <span className="sb-ta">Pass to TA<Icon name="handoff" /></span>
+      <span className="sb-ta">Pass to TA<Icon name="person" /></span>
     </div>
   )
 }
@@ -865,7 +883,13 @@ function Student({ queue, groups, cats, hours, act, live, ready, me, course, go 
 // spot under the pointer is worked out from those first boxes, not the moving ones.
 const ROW_GAP = 8 // .stubs gap in App.css
 // Where a group dragged to page height py would land (index in the line).
-function dropIndex(d, py) {
+function dropIndex(d, px, py) {
+  // A row dragged out of the list onto Next up (in the other column) becomes next.
+  const now = d.base[0]
+  if (d.from > 0 && now && px > now.left - 12 && px < now.right + 12 && py > now.top - 12 && py < now.bottom + 12) return 0
+  // Next up carried around its own column stays next; it has to be brought over the list.
+  const list = d.base[1]
+  if (d.from === 0 && list && (px < list.left - 40 || px > list.right + 40)) return 0
   let to = 0
   d.base.forEach((r, i) => {
     if (i === d.from || !r) return
@@ -875,7 +899,42 @@ function dropIndex(d, py) {
   })
   return to
 }
-const moveDrag = (d, clientY) => ({ ...d, y: clientY, s: window.scrollY, to: dropIndex(d, clientY + window.scrollY) })
+// Play the move of `el` from the box `from` (a viewport rect) to where it is now. `ghost` is a
+// copy of how it looked there; it fades out while stretching onto the new box, and a copy of
+// how it looks now grows in from the old box. The copies float above the page, so the column
+// it leaves or enters doesn't clip them; the real ticket shows again when they're done.
+const MORPH = { duration: 420, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' }
+function float(copy, box) {
+  copy.classList.remove('drop-target', 'drop-ready', 'dragging', 'lifted', 'dropping', 'swiping')
+  copy.setAttribute('aria-hidden', 'true')
+  copy.inert = true
+  Object.assign(copy.style, {
+    position: 'fixed', left: `${box.left}px`, top: `${box.top}px`, width: `${box.width}px`, height: `${box.height}px`, margin: '0',
+    zIndex: '60', pointerEvents: 'none', transformOrigin: '0 0', transform: 'none', scale: 'none', translate: 'none', opacity: '1', animation: 'none',
+  })
+  document.body.append(copy)
+  return copy
+}
+// live: `el` already floats above the page and keeps moving (the copy under the pointer), so it
+// is animated itself instead of through a still copy.
+function morph(el, from, ghost, live = false) {
+  const to = el.getBoundingClientRect()
+  if (!to.width || !to.height || !from.width || !from.height) return
+  const there = `translate(${to.left - from.left}px, ${to.top - from.top}px) scale(${to.width / from.width}, ${to.height / from.height})`
+  const back = `translate(${from.left - to.left}px, ${from.top - to.top}px) scale(${from.width / to.width}, ${from.height / to.height})`
+  const before = float(ghost, from)
+  if (live) {
+    before.animate([{ transform: 'none', opacity: 1 }, { opacity: 0.5, offset: 0.3 }, { transform: there, opacity: 0 }], MORPH).finished.finally(() => before.remove())
+    el.animate([{ transform: back, transformOrigin: '0 0', opacity: 0 }, { opacity: 0.6, offset: 0.3 }, { transform: 'none', transformOrigin: '0 0', opacity: 1 }], MORPH)
+    return
+  }
+  const after = float(el.cloneNode(true), to)
+  el.style.visibility = 'hidden'
+  before.animate([{ transform: 'none', opacity: 1 }, { opacity: 0.6, offset: 0.35 }, { transform: there, opacity: 0 }], MORPH)
+  after.animate([{ transform: back, opacity: 0 }, { opacity: 0.6, offset: 0.35 }, { transform: 'none', opacity: 1 }], MORPH).finished
+    .finally(() => { before.remove(); after.remove(); el.style.visibility = '' })
+}
+const moveDrag = (d, clientX, clientY) => ({ ...d, x: clientX, y: clientY, s: window.scrollY, to: dropIndex(d, clientX + window.scrollX, clientY + window.scrollY) })
 
 function Professor({ groups, queue, cats, hours, act, live, ready, courses, course, info, setProClass }) {
   const colorOf = useContext(Colors)
@@ -975,6 +1034,61 @@ function Professor({ groups, queue, cats, hours, act, live, ready, courses, cour
     setDrag(null); setSettling(true)
     requestAnimationFrame(() => requestAnimationFrame(() => setSettling(false)))
   }, [order]) // eslint-disable-line react-hooks/exhaustive-deps
+  // A group moving into or out of Next up morphs between the two shapes: a copy of how it
+  // looked fades out while stretching to its new box, and the real one grows in from the old box.
+  // snapshot() records every ticket just before such a move; the effect plays it once the move lands.
+  const flip = useRef(null)
+  const floatRef = useRef(null)
+  // Picking up Next up: the big ticket shrinks into the row-sized copy under the pointer.
+  const pickup = useRef(null)
+  useLayoutEffect(() => {
+    const p = pickup.current
+    pickup.current = null
+    const el = floatRef.current?.firstElementChild
+    if (drag?.from !== 0 || !p || !el || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    morph(el, p.rect, p.ghost, true)
+  }, [drag?.from]) // eslint-disable-line react-hooks/exhaustive-deps
+  // stand-in: { id, el } when a group is shown somewhere else just then (a floating copy, a preview).
+  const snapshot = (standIn) => {
+    const shot = { first: groups[0]?.id, boxes: {} }
+    const add = (id, el) => { if (el) shot.boxes[id] = { rect: el.getBoundingClientRect(), ghost: el.cloneNode(true) } }
+    add(groups[0]?.id, refs.current[0])
+    groups.forEach((g, k) => { if (k > 0) add(g.id, refs.current[k]?.querySelector('.qrow')) })
+    if (standIn) add(standIn.id, standIn.el)
+    flip.current = shot
+  }
+  // A row carried over Next up turns into the big ticket (and back into a row if it's carried off).
+  const overNow = !!drag && drag.from > 0 && drag.to === 0 && !!groups[drag.from] && !!drag.base[0]
+  const previewRef = useRef(null)
+  const previewWas = useRef(null)
+  useLayoutEffect(() => {
+    const calm = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    const row = drag && refs.current[drag.from]?.querySelector('.qrow')
+    if (overNow) {
+      const el = previewRef.current
+      if (!el || !row) return
+      previewWas.current = { rect: el.getBoundingClientRect(), ghost: el.cloneNode(true) }
+      if (!calm) morph(el, row.getBoundingClientRect(), row.cloneNode(true), true)
+    } else if (previewWas.current) {
+      const was = previewWas.current
+      previewWas.current = null
+      if (drag && !drag.dropping && row && !calm) morph(row, was.rect, was.ghost, true)
+    }
+  }, [overNow]) // eslint-disable-line react-hooks/exhaustive-deps
+  useLayoutEffect(() => {
+    const shot = flip.current
+    if (!shot || drag) return
+    flip.current = null
+    const now = groups[0]?.id
+    // Only a reorder morphs: if the old Next up left the line (helped, passed), the new one just appears.
+    if (!now || now === shot.first || !groups.some((g) => g.id === shot.first)) return
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    const elOf = (id) => (id === now ? refs.current[0] : refs.current[groups.findIndex((g) => g.id === id)]?.querySelector('.qrow'))
+    for (const id of [now, shot.first]) {
+      const el = elOf(id), from = shot.boxes[id]
+      if (el && from) morph(el, from.rect, from.ghost)
+    }
+  }, [order, drag]) // eslint-disable-line react-hooks/exhaustive-deps
   // Near the top or bottom of the window, scroll while dragging (faster closer to the edge).
   const dragging = !!drag && !drag.dropping
   useEffect(() => {
@@ -983,7 +1097,7 @@ function Professor({ groups, queue, cats, hours, act, live, ready, courses, cour
     const tick = () => {
       const y = pointerY.current, edge = 80
       const v = y < edge ? -(edge - y) / 4 : y > window.innerHeight - edge ? (y - window.innerHeight + edge) / 4 : 0
-      if (v) { window.scrollBy(0, v); setDrag((d) => (d && !d.dropping ? moveDrag(d, d.y) : d)) }
+      if (v) { window.scrollBy(0, v); setDrag((d) => (d && !d.dropping ? moveDrag(d, d.x, d.y) : d)) }
       raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
@@ -997,35 +1111,38 @@ function Professor({ groups, queue, cats, hours, act, live, ready, courses, cour
       e.currentTarget.setPointerCapture(e.pointerId)
       const base = groups.map((_, k) => {
         const r = refs.current[k]?.getBoundingClientRect()
-        return r && { top: r.top + window.scrollY, bottom: r.bottom + window.scrollY }
+        return r && { top: r.top + window.scrollY, bottom: r.bottom + window.scrollY, left: r.left + window.scrollX, right: r.right + window.scrollX }
       })
       const row = base[i > 0 ? i : 1]
-      // Next up's floating copy is a row: center it on the pointer, over the list column.
+      // Next up's floating copy is a row as wide as the list's, held by its grip under the pointer.
       const r = refs.current[i > 0 ? i : 1]?.getBoundingClientRect() ?? refs.current[i]?.getBoundingClientRect()
       pointerY.current = e.clientY
+      if (i === 0) pickup.current = { rect: refs.current[0].getBoundingClientRect(), ghost: refs.current[0].cloneNode(true) }
       setDrag({
-        from: i, to: i, y: e.clientY, y0: e.clientY, s: window.scrollY, s0: window.scrollY, base,
+        from: i, to: i, x: e.clientX, x0: e.clientX, y: e.clientY, y0: e.clientY, s: window.scrollY, s0: window.scrollY, base,
         slot: row ? row.bottom - row.top + ROW_GAP : 0,
-        dy: i > 0 && r ? e.clientY - r.top : 40, left: r?.left ?? 0, width: r?.width ?? 400,
+        dy: i > 0 && r ? e.clientY - r.top : 40, dx: 16, width: r?.width ?? 400,
       })
     },
     onPointerMove: (e) => {
       if (!drag || drag.from !== i || drag.dropping) return
       pointerY.current = e.clientY
-      setDrag(moveDrag(drag, e.clientY))
+      setDrag(moveDrag(drag, e.clientX, e.clientY))
     },
     onPointerUp: () => {
       const d = drag
       if (!d || d.from !== i || d.dropping) return
       if (d.to === d.from) { setDrag(null); return }
-      // Hold everything where it is until the new order arrives (see the layout effect below).
+      // Hold everything where it is until the new order arrives (see the layout effect above).
+      if (d.from === 0) snapshot({ id: g.id, el: floatRef.current?.firstElementChild })
+      else if (d.to === 0) snapshot({ id: g.id, el: previewRef.current })
       setDrag({ ...d, dropping: true })
       pin(g, d.to + 1).finally(() => setDrag((x) => (x?.dropping ? null : x)))
     },
     onPointerCancel: () => setDrag(null),
     onKeyDown: (e) => {
-      if (e.key === 'ArrowUp' && i > 0) { e.preventDefault(); pin(g, i) }
-      if (e.key === 'ArrowDown' && i < groups.length - 1) { e.preventDefault(); pin(g, i + 2) }
+      if (e.key === 'ArrowUp' && i > 0) { e.preventDefault(); if (i === 1) snapshot(); pin(g, i) }
+      if (e.key === 'ArrowDown' && i < groups.length - 1) { e.preventDefault(); if (i === 0) snapshot(); pin(g, i + 2) }
       // Keyboard version of the swipe.
       if (e.key === 'ArrowRight') { e.preventDefault(); finish(g) }
       if (e.key === 'ArrowLeft') { e.preventDefault(); passToTA(g) }
@@ -1044,10 +1161,32 @@ function Professor({ groups, queue, cats, hours, act, live, ready, courses, cour
     )
   }
   const firstSwipe = first && swipeView(first)
+  // The big Next up ticket for group g (at index i in the line): its head, body and foot. Also
+  // drawn, inert, as the preview of a row carried over Next up.
+  const nowParts = (g, i) => ({
+    color: catColor(g.type, cats), tear: 'head',
+    head: <><span className="now-label"><span className="pulse" aria-hidden="true" />Next up</span><span className="now-head-right"><span className="tag">{cats[g.type]?.label || g.type}</span><span className="qrow-time"><Icon name="clock" size={14} />~{g.mins} min</span></span></>,
+    foot: <>
+      <div className="tools">
+        <button className="grip" {...handleProps(g, i)}><Icon name="grip" /></button>
+        {lockBtn(g, i)}
+      </div>
+      {/* Same order as the swipe: pass to a TA on the left, helped on the right. */}
+      <div className="decide">
+        <button className="decide-btn ta" onClick={() => passToTA(g)} aria-label="Pass to a TA" title="Pass to a TA"><Icon name="handoff" size={26} /></button>
+        <button className="decide-btn help" onClick={() => finish(g)} aria-label={g.tickets.length > 1 ? 'Helped, all of them' : 'Helped'} title={g.tickets.length > 1 ? 'Helped (all)' : 'Helped'}><Icon name="check" size={30} /></button>
+      </div>
+    </>,
+    children: <>
+      <h2 className="now-q">{g.title}</h2>
+      <p className="now-who"><Icon name="users" size={16} /><Names tickets={g.tickets} /></p>
+      {g.solo > g.mins && <p className="now-time"><Icon name="users" size={16} />Helping them together saves {g.solo - g.mins} min</p>}
+    </>,
+  })
   const dragClass = (i) => {
     if (!drag) return settling ? ' no-anim' : ''
-    if (i === drag.from) return drag.from === 0 ? ' dragging' : ` lifted${drag.dropping ? ' dropping' : ''}`
-    if (i === 0 && drag.to === 0) return ' drop-target'
+    if (i === drag.from) return drag.from === 0 ? ' dragging' : ` lifted${drag.to === 0 ? ' over-now' : ''}${drag.dropping ? ' dropping' : ''}`
+    if (i === 0) return drag.to === 0 ? ' drop-target' : drag.dropping ? '' : ' drop-ready'
     return ''
   }
   // How far each ticket is moved while a group is dragged.
@@ -1056,14 +1195,16 @@ function Professor({ groups, queue, cats, hours, act, live, ready, courses, cour
     const { from, to, slot, base } = drag
     if (i === from) {
       if (from === 0) return undefined // the floating copy moves instead
-      if (!drag.dropping) return { transform: `translateY(${drag.y + drag.s - drag.y0 - drag.s0}px)` }
-      // Dropped: settle into the gap (or fade into Next up).
-      if (to === 0) return { transform: `translateY(${base[1].top - base[from].top}px) scale(0.96)`, opacity: 0 }
+      // The lifted row follows the pointer anywhere, so it can be carried out of the list onto Next up.
+      const held = { transform: `translate(${drag.x - drag.x0}px, ${drag.y + drag.s - drag.y0 - drag.s0}px)` }
+      if (!drag.dropping) return held
+      // Dropped: settle into the gap. Dropped on Next up, it waits where it was let go and then morphs in.
+      if (to === 0) return held
       return { transform: `translateY(${to < from ? base[to].top - base[from].top : base[to].bottom - base[from].bottom}px)` }
     }
     if (i === 0) return undefined
     let shift = 0
-    if (from === 0) shift = i > to ? slot : 0 // open a gap after row `to`
+    if (from === 0) shift = to > 0 && i > to ? slot : 0 // over the list: open a gap after row `to`
     else if (from < to && i > from && i <= to) shift = -slot
     else if (from > to && i >= to && i < from) shift = slot
     return shift ? { transform: `translateY(${shift}px)` } : undefined
@@ -1107,25 +1248,9 @@ function Professor({ groups, queue, cats, hours, act, live, ready, courses, cour
             <div className={`swipe now-swipe${firstSwipe.wrap}`} key={first.id}>
               <SwipeBg dir={firstSwipe.dir} ready={firstSwipe.ready} />
               <Card
-                color={catColor(first.type, cats)} tear="head" className={`now print swipe-card${firstSwipe.cls}${dragClass(0)}`}
+                {...nowParts(first, 0)} className={`now print swipe-card${firstSwipe.cls}${dragClass(0)}`}
                 ref={(el) => { refs.current[0] = el }} style={firstSwipe.style} {...swipeProps(first)}
-                head={<><span className="now-label"><span className="pulse" aria-hidden="true" />Next up</span><span className="now-head-right"><span className="tag">{cats[first.type]?.label || first.type}</span><span className="qrow-time"><Icon name="clock" size={14} />~{first.mins} min</span></span></>}
-                foot={<>
-                  <div className="tools">
-                    <button className="grip" {...handleProps(first, 0)}><Icon name="grip" /></button>
-                    {lockBtn(first, 0)}
-                  </div>
-                  {/* Same order as the swipe: pass to a TA on the left, helped on the right. */}
-                  <div className="decide">
-                    <button className="decide-btn ta" onClick={() => passToTA(first)} aria-label="Pass to a TA" title="Pass to a TA"><Icon name="handoff" size={26} /></button>
-                    <button className="decide-btn help" onClick={() => finish(first)} aria-label={first.tickets.length > 1 ? 'Helped, all of them' : 'Helped'} title={first.tickets.length > 1 ? 'Helped (all)' : 'Helped'}><Icon name="check" size={30} /></button>
-                  </div>
-                </>}
-              >
-                <h2 className="now-q">{first.title}</h2>
-                <p className="now-who"><Icon name="users" size={16} /><Names tickets={first.tickets} /></p>
-                {first.solo > first.mins && <p className="now-time"><Icon name="users" size={16} />Helping them together saves {first.solo - first.mins} min</p>}
-              </Card>
+              />
             </div>
             <p className="swipe-tip" aria-hidden="true"><span><Icon name="back" size={14} />Pass to TA</span><span>Swipe a ticket</span><span>Helped<Icon name="arrow" size={14} /></span></p>
           </>) : (
@@ -1137,15 +1262,19 @@ function Professor({ groups, queue, cats, hours, act, live, ready, courses, cour
         </section>
 
         <aside className="side" aria-labelledby="after-h">
-          <div className="card line">
+          <div className={`card line${drag?.from === 0 && !drag.dropping ? (drag.to > 0 ? ' drop-into' : ' drop-ready') : ''}`}>
             <div className="line-head">
               <div>
                 <h2 id="after-h">After that</h2>
-                <p>{rest.length > 0 ? 'Swipe right when helped, left to pass to a TA · drag the grip on the left to reorder' : 'Nobody else is waiting.'}</p>
+                {rest.length === 0 && <p>Nobody else is waiting.</p>}
               </div>
               {rest.length > 0 && <span className="count-pill">{rest.length}</span>}
             </div>
-            <ol className={`stubs${settling ? ' no-anim' : ''}`} style={drag?.from === 0 ? { paddingBottom: drag.slot } : undefined}>
+            <ol className={`stubs${settling ? ' no-anim' : ''}`} style={drag?.from === 0 && drag.to > 0 ? { paddingBottom: drag.slot } : undefined}>
+              {/* Next up carried over the list: a dashed slot shows where it will land. */}
+              {drag?.from === 0 && drag.to > 0 && drag.base[1] && (
+                <li className="drop-slot" aria-hidden="true" style={{ top: drag.base[drag.to].bottom + ROW_GAP - drag.base[1].top, height: drag.slot - ROW_GAP }} />
+              )}
               {rest.map((g, k) => {
                 const i = k + 1
                 const sv = swipeView(g)
@@ -1200,9 +1329,15 @@ function Professor({ groups, queue, cats, hours, act, live, ready, courses, cour
       </div>
 
       {passed && <PassedDialog g={passed} onClose={closePassed} onUndo={() => unpass(passed)} />}
+      {/* A row carried over Next up grows into a preview of the big ticket, right where it would go. */}
+      {overNow && (
+        <div className="now-swipe now-preview" inert aria-hidden="true" style={{ top: drag.base[0].top - window.scrollY, left: drag.base[0].left, width: drag.base[0].right - drag.base[0].left }}>
+          <Card {...nowParts(groups[drag.from], drag.from)} className="now print" ref={previewRef} />
+        </div>
+      )}
       {drag?.from === 0 && groups[0] && (
-        <ol className="stubs floating" aria-hidden="true" style={{ top: drag.y - drag.dy, left: drag.left, width: drag.width }}>
-          <li>
+        <ol className="stubs floating" aria-hidden="true" style={{ top: drag.y - drag.dy, left: drag.x - drag.dx, width: drag.width }}>
+          <li ref={floatRef}>
             <QueueRow g={groups[0]} cats={cats}>
               <span className="tag">{cats[groups[0].type]?.label || groups[0].type}</span>
               <Names tickets={groups[0].tickets} />
