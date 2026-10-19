@@ -202,7 +202,6 @@
 
 /* ---- Class page: header line, then two areas ---- */
 .class-page { display: grid; gap: 20px; }
-.class-head { display: flex; align-items: center; gap: 10px 18px; flex-wrap: wrap; }
 .class-where { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 14px; font-weight: 500; }
 .layout { display: grid; gap: clamp(20px, 2.5vw, 36px); align-items: start; }
 .layout.student { grid-template-columns: minmax(360px, 1fr) minmax(0, 1fr); }
@@ -247,11 +246,11 @@
 /* Mini tickets: a colored end (number or grip) torn off along a dashed line, with a notch
    punched top and bottom where it tears. --notch is the color of the card they sit on. */
 .stub { --notch: var(--surface); --end: 56px; position: relative; display: grid; grid-template-columns: var(--end) minmax(0, 1fr) auto; align-items: stretch; gap: 0 14px; padding: 0 14px 0 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); transition: border-color 0.15s, background-color 0.15s, box-shadow 0.15s; }
-.stub::before, .stub::after, .qrow::before, .qrow::after { content: ""; position: absolute; left: calc(var(--end) - 9px); width: 14px; height: 14px; border-radius: 50%; background: var(--notch); border: 1px solid; border-color: inherit; z-index: 1; transition: border-color 0.15s; }
+.stub::before, .stub::after, .qrow::before, .qrow::after, .course-strip::before, .course-strip::after { content: ""; position: absolute; left: calc(var(--end) - 9px); width: 14px; height: 14px; border-radius: 50%; background: var(--notch); border: 1px solid; border-color: inherit; z-index: 1; transition: border-color 0.15s; }
 /* Each notch is centered on the ticket's outer edge and only its inner half shows, so it
    covers the edge line there and the outline dips around the punch instead of running straight across. */
-.stub::before, .qrow::before { top: -9px; clip-path: inset(50% 0 0 0); }
-.stub::after, .qrow::after { bottom: -9px; clip-path: inset(0 0 50% 0); }
+.stub::before, .qrow::before, .course-strip::before { top: -9px; clip-path: inset(50% 0 0 0); }
+.stub::after, .qrow::after, .course-strip::after { bottom: -9px; clip-path: inset(0 0 50% 0); }
 .stub > .stub-body { padding: 12px 0; }
 .stub > .stub-actions { padding: 10px 0; }
 .stub:hover { border-color: var(--border-2); }
@@ -341,10 +340,7 @@ body:has(.floating), body:has(.lifted) { cursor: grabbing; user-select: none; }
 .swipe-bg.to-help.ready { background: var(--good); color: var(--surface); }
 .swipe-bg.to-ta.ready { background: var(--warn); color: var(--surface); }
 .swipe-bg.ready span { transform: scale(1.08); }
-.swipe-tip { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 0 6px; font-size: 13px; font-weight: 600; color: var(--muted); }
-.swipe-tip span { display: inline-flex; align-items: center; gap: 4px; }
-.swipe-tip span:first-child { color: var(--warn); }
-.swipe-tip span:last-child { color: var(--good); }
+.swipe-tip { text-align: center; font-size: 13px; font-weight: 600; color: var(--muted); }
 
 /* Dialog: centered card over a dimmed page */
 .modal { width: min(440px, calc(100vw - 32px)); padding: 26px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); color: var(--text); box-shadow: var(--shadow-3); }
@@ -372,17 +368,29 @@ body:has(.floating), body:has(.lifted) { cursor: grabbing; user-select: none; }
 .tab i { width: 9px; height: 9px; border-radius: 3px; background: var(--cc-ink); }
 .tab:hover { color: var(--text); }
 .tab[aria-selected='true'] { background: var(--cc); border-color: var(--cc-ink); color: var(--cc-ink); }
-.pro-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px 24px; flex-wrap: wrap; }
-.pro-head .eyebrow .course-code { color: inherit; }
 .pro-session { display: flex; align-items: center; gap: 12px; }
 
-.stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
-.stat { display: grid; gap: 2px; padding: 14px 18px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); box-shadow: var(--shadow-1); }
-.stat dt { font: 700 13px/1.2 "Barlow Condensed", "Barlow", sans-serif; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); padding-bottom: 6px; margin-bottom: 4px; border-bottom: 1px solid var(--border); }
-.stat dd { font: 800 34px/1.05 'Barlow Condensed', sans-serif; letter-spacing: -0.01em; }
-.stat dd small { margin-left: 4px; font: 600 15px 'Barlow', sans-serif; color: var(--muted); }
-.stat span { font-size: 13px; color: var(--muted); }
-.stat.good dd { color: var(--good); }
+.course-strip {
+  --notch: var(--bg); --end: 150px; position: relative; display: flex; align-items: center; gap: 14px 22px; flex-wrap: wrap;
+  min-height: 64px; padding: 0 18px 0 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md);
+  /* No shadow: a box shadow would run straight past the punched notches, like the queue tickets avoid. */
+}
+.course-strip .cs-code {
+  align-self: stretch; flex: none; width: var(--end); display: grid; place-items: center; padding: 0 12px;
+  background: var(--cc); color: var(--cc-ink); border-right: 2px dashed var(--surface); border-radius: calc(var(--r-md) - 1px) 0 0 calc(var(--r-md) - 1px);
+}
+.course-strip .cs-code .course-code { color: inherit; font: 700 16px/1.1 "Barlow Condensed", "Barlow", sans-serif; letter-spacing: 0.08em; text-align: center; }
+.course-strip .cs-code .course-code i { display: none; }
+.cs-main { flex: 1 1 220px; min-width: 0; display: grid; gap: 2px; padding: 10px 0; }
+.cs-title { font: 800 24px/1.1 "Barlow Condensed", "Barlow", sans-serif; letter-spacing: 0.01em; text-transform: uppercase; color: var(--text); overflow-wrap: anywhere; }
+.cs-stats { display: flex; margin: 0; }
+.cs-stats > div { display: grid; justify-items: center; gap: 1px; padding: 4px 14px; border-left: 1px solid var(--border); }
+.cs-stats > div:first-child { border-left: 0; }
+.cs-stats dt { font: 700 11px/1.2 "Barlow Condensed", "Barlow", sans-serif; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+.cs-stats dd { margin: 0; font: 800 24px/1 "Barlow Condensed", sans-serif; }
+.cs-stats dd small { margin-left: 2px; font: 600 13px "Barlow", sans-serif; color: var(--muted); }
+.cs-stats .good dd { color: var(--good); }
+.course-strip .pro-session { padding: 10px 0; }
 
 /* Next up's notches are cut out for real (--perf-y is set by Card), so its edge and its shadow,
    cast by the wrapper, curve around them instead of running straight past. */
@@ -453,7 +461,9 @@ body:has(.floating), body:has(.lifted) { cursor: grabbing; user-select: none; }
 /* ---- Narrow screens (including half of a split laptop screen) ---- */
 @media (max-width: 1000px) {
   .layout.student, .layout.pro, .profile-grid { grid-template-columns: 1fr; }
-  .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  /* The figures wrap to a row of their own; the stub (and its tear line) stays on the top row. */
+  .cs-stats { order: 3; flex-basis: 100%; justify-content: space-between; padding: 8px 4px 8px 12px; border-top: 1px dashed var(--border-2); }
+  .course-strip::after { display: none; }
 }
 @media (max-width: 640px) {
   .role-tag, .navlabel { display: none; }
@@ -461,10 +471,15 @@ body:has(.floating), body:has(.lifted) { cursor: grabbing; user-select: none; }
   .top-right { margin-left: auto; gap: 8px; }
   .top-status { order: 3; flex-basis: 100%; margin-left: 0; }
   .top-status:empty { display: none; }
-  .stat:last-child:nth-child(odd) { grid-column: 1 / -1; }
   .shell { padding-top: 20px; }
   .row2 { grid-template-columns: 1fr; }
-  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .course-strip { --end: 96px; gap: 10px 14px; padding-right: 12px; }
+  .course-strip .pro-session { order: 4; flex-basis: 100%; padding: 0 0 12px 12px; }
+  .course-strip .pro-session .btn { flex: 1; }
+  .course-strip .cs-code .course-code { font-size: 14px; }
+  .cs-title { font-size: 20px; }
+  .cs-stats > div { padding: 2px 6px; }
+  .cs-stats dd { font-size: 20px; }
   .stub { --end: 48px; grid-template-columns: var(--end) minmax(0, 1fr); padding: 0 12px 0 0; }
   .stub-num { grid-row: span 2; }
   .stub > .stub-actions { grid-column: 2; padding: 0 0 12px; }

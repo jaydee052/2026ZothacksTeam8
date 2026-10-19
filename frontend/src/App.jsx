@@ -1,4 +1,5 @@
 import { Fragment, createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import * as api from './api.js'
 import { CURRENT_PROFESSOR, STUDENTS } from './config.js'
 
@@ -217,6 +218,17 @@ function App({ role, student }) {
   useEffect(() => { if (ready && !live && known && api.ensureDemoSessions(known.split('|'))) refresh() }, [ready, live, known, sessions]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { document.documentElement.dataset.theme = theme }, [theme])
+  // Fade between light and dark instead of flipping every color at once: a cross-fade of the
+  // whole page where the browser can, else a short color transition on everything.
+  const switchTheme = (next) => {
+    const root = document.documentElement
+    const apply = () => { root.dataset.theme = next; flushSync(() => setTheme(next)) }
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return apply()
+    if (document.startViewTransition) return void document.startViewTransition(apply)
+    root.classList.add('theme-fade')
+    apply()
+    setTimeout(() => root.classList.remove('theme-fade'), 400)
+  }
   useEffect(() => {
     if (!toast) return
     const t = setTimeout(() => setToast(null), toast.undo ? 7000 : 3500)
@@ -244,7 +256,7 @@ function App({ role, student }) {
   // Which page is really showing (a class page with no class falls back to home).
   const onHome = role === 'professor' ? !(view === 'course' && curProClass) : !(view === 'profile' || (view === 'class' && cur))
 
-  const studentProps = { queue, groups, cats, hours, act, live, ready, me, course: cur, go: setView }
+  const studentProps = { queue, groups, cats, hours, act, live, ready, me, course: cur, title: classes.find((c) => c.course === cur)?.title, go: setView }
   const state = hours && (hours.state === 'running' ? 'is open' : hours.state === 'upcoming' ? `starts ${when(hours.starts_at)}` : 'has ended')
 
   return (
@@ -265,7 +277,7 @@ function App({ role, student }) {
                 <span className="avatar" aria-hidden="true">{initials(student.name)}</span><span className="navlabel">Profile</span>
               </button>
             )}
-            <button className="iconbtn" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label={theme === 'dark' ? 'Light mode' : 'Dark mode'} title={theme === 'dark' ? 'Light mode' : 'Dark mode'}>
+            <button className="iconbtn" onClick={() => switchTheme(theme === 'dark' ? 'light' : 'dark')} aria-label={theme === 'dark' ? 'Light mode' : 'Dark mode'} title={theme === 'dark' ? 'Light mode' : 'Dark mode'}>
               <Icon name={theme === 'dark' ? 'sun' : 'moon'} />
             </button>
           </div>
@@ -393,6 +405,22 @@ function Barcode({ code }) {
 // "● COMPSCI 161": the class code with its color dot, used wherever a class is named.
 function CourseCode({ course }) {
   return <span className="course-code"><i aria-hidden="true" />{course}</span>
+}
+
+// The top of a class page in one line, shaped like a ticket: the course code on a color stub,
+// then the title and where/when, then anything else (the professor's figures and session button).
+function CourseStrip({ course, title, hours, heading: Heading = 'p', children }) {
+  const colorOf = useContext(Colors)
+  return (
+    <div className={`course-strip cc cc-${colorOf(course)}`}>
+      <span className="cs-code"><CourseCode course={course} /></span>
+      <div className="cs-main">
+        {title && <Heading className="cs-title">{title}</Heading>}
+        {hours && <span className="class-where"><Icon name="pin" size={15} />{hours.location} · {when(hours.starts_at)}</span>}
+      </div>
+      {children}
+    </div>
+  )
 }
 
 // sessions is null until the first load.
@@ -670,7 +698,7 @@ function PassedDialog({ g, onClose, onUndo }) {
   )
 }
 
-function Student({ queue, groups, cats, hours, act, live, ready, me, course, go }) {
+function Student({ queue, groups, cats, hours, act, live, ready, me, course, title, go }) {
   const colorOf = useContext(Colors)
   // [{ id, name }], kept per student, so two student tabs in one browser don't claim each
   // other's questions. Matching the name too means leftover ids from a reset database never
@@ -843,10 +871,7 @@ function Student({ queue, groups, cats, hours, act, live, ready, me, course, go 
 
   return (
     <div className="class-page">
-      <div className={`class-head cc cc-${colorOf(course)}`}>
-        <CourseCode course={course} />
-        {hours && <span className="class-where"><Icon name="pin" size={16} />{hours.location} · {when(hours.starts_at)}</span>}
-      </div>
+      <CourseStrip course={course} title={title} hours={hours} />
       <div className="layout student">
         <section className="lead" aria-label="Your spot">
           {showForm ? form : (
@@ -1265,22 +1290,16 @@ function Professor({ groups, queue, cats, hours, act, live, ready, courses, cour
         ))}
       </div>
 
-      <div className="pro-head">
-        <div className="page-head">
-          <p className={`eyebrow cc cc-${colorOf(course)}`}><CourseCode course={course} /></p>
-          <h1>{info?.course_title || course}</h1>
-          {hours && <p className="class-where"><Icon name="pin" size={16} />{hours.location} · {when(hours.starts_at)}</p>}
-        </div>
+      <CourseStrip course={course} title={info?.course_title || course} hours={hours} heading="h1">
+        <dl className="cs-stats">
+          <div title={plural(queue.length, 'student', 'students')}><dt>Waiting</dt><dd>{queue.length}</dd></div>
+          <div title="Groups in line"><dt>Groups</dt><dd>{groups.length}</dd></div>
+          <div title="Estimated time to help everyone in line"><dt>Est. total</dt><dd>{left}<small>m</small></dd></div>
+          <div className="good" title="Saved by grouping"><dt>Saved</dt><dd>{saved}<small>m</small></dd></div>
+          <div title="Helped today"><dt>Helped</dt><dd>{helped}</dd></div>
+        </dl>
         <div className="pro-session">{sessionAction}</div>
-      </div>
-
-      <dl className="stats">
-        <div className="stat"><dt>Waiting</dt><dd>{queue.length}</dd><span>{plural(queue.length, 'student', 'students')}</span></div>
-        <div className="stat"><dt>Groups</dt><dd>{groups.length}</dd><span>in line</span></div>
-        <div className="stat"><dt>Time left</dt><dd>{left}<small>min</small></dd><span>to clear the line</span></div>
-        <div className="stat good"><dt>Saved</dt><dd>{saved}<small>min</small></dd><span>by grouping</span></div>
-        <div className="stat"><dt>Helped</dt><dd>{helped}</dd><span>today</span></div>
-      </dl>
+      </CourseStrip>
 
       <div className="layout pro">
         <section className="lead" aria-label="Next up">
@@ -1292,7 +1311,7 @@ function Professor({ groups, queue, cats, hours, act, live, ready, courses, cour
                 ref={(el) => { refs.current[0] = el }} style={firstSwipe.style} {...swipeProps(first)}
               />
             </div>
-            <p className="swipe-tip" aria-hidden="true"><span><Icon name="back" size={14} />Pass to TA</span><span>Swipe a ticket</span><span>Helped<Icon name="arrow" size={14} /></span></p>
+            <p className="swipe-tip" aria-hidden="true">Swipe a ticket</p>
           </>) : (
             <div className="notice empty">
               <span className="notice-icon"><Icon name="inbox" size={24} /></span>

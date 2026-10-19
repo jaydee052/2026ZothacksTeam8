@@ -93,6 +93,12 @@
 
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
+/* Switching light/dark (switchTheme in App.jsx): the page cross-fades, or where the browser
+   can't, colors ease over briefly. */
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: 0.35s; animation-timing-function: ease; }
+.theme-fade, .theme-fade *, .theme-fade *::before, .theme-fade *::after {
+  transition: background-color 0.35s ease, color 0.35s ease, border-color 0.35s ease, fill 0.35s ease, box-shadow 0.35s ease !important;
+}
 body {
   margin: 0; background: var(--bg); color: var(--text);
   font: 16px/1.5 'Barlow', system-ui, sans-serif; font-weight: 500;
